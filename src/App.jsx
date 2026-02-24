@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import './App.css'
 
-const WORD_LENGTH = 5
+const DEFAULT_WORD_LENGTH = 5
 const MAX_GUESSES = 6
 const PULLI = '்'
 
@@ -26,7 +26,7 @@ const CONSONANTS = [
   'ல', 'வ', 'ழ', 'ள', 'ற', 'ன',
 ]
 
-const RAW_WORDS = [
+const RAW_WORDS_5 = [
   'மரங்கள்',
   'பாடல்கள்',
   'சூழல்கள்',
@@ -42,8 +42,60 @@ const RAW_WORDS = [
   'விநாயகர்',
   'ஆலமரம்',
   'சர்க்கரை',
-  'தாழ்பாள்',
   'மேம்பாலம்'
+]
+
+const RAW_WORDS_4 = [
+  'பட்டம்',
+  'உலகம்',
+  'தேங்காய்',
+  'தங்கம்',
+  'மாங்காய்',
+  'செங்கல்',
+  'வெல்லம்',
+  'குரங்கு',
+  'முறுக்கு',
+  'மிட்டாய்',
+  'புதையல்',
+  'ஔடதம்',
+  'இளநீர்',
+  'பேருந்து',
+  'வெண்ணெய்',
+  'கற்றாழை',
+  'குழந்தை',
+  'அன்னம்',
+  'எறும்பு',
+  'கிண்ணம்',
+  'மூங்கில்',
+  'ஊஞ்சல்',
+  'பௌர்ணமி',
+  'கப்பல்',
+  'கப்பல்',
+  'எண்ணெய்',
+  'அன்னாசி',
+  'பட்டாணி',
+  'இந்தியா',
+  'சிலந்தி',
+  'பொங்கல்',
+  'வானூர்தி',
+  'பருந்து',
+  'வானவில்',
+  'சிங்கம்',
+  'பப்பாளி',
+  'கண்ணாடி',
+  'இரண்டு',
+  'தக்காளி',
+  'இதயம்',
+  'சூரியன்',
+  'வளையல்',
+  'வட்டம்',
+  'தொலைபேசி',
+  'கங்காரு',
+  'கட்டில்',
+  'கரும்பு',
+  'ஐம்பது',
+  'மஞ்சள்',
+  'நீச்சல்'
 ]
 
 const FALLBACK_WORD = 'மரங்கள்'
@@ -55,10 +107,18 @@ const splitGraphemes = (value) => {
   return Array.from(value)
 }
 
-const WORDS = RAW_WORDS.filter((word) => splitGraphemes(word).length === WORD_LENGTH)
+const getWordsForLength = (length) => {
+  if (length === 4) return RAW_WORDS_4
+  if (length === 5) return RAW_WORDS_5
+  return []
+}
 
-const pickRandomWord = () => {
-  const list = WORDS.length > 0 ? WORDS : [FALLBACK_WORD]
+const pickRandomWord = (length) => {
+  const list = getWordsForLength(length)
+  if (list.length === 0) {
+    const fallback = getWordsForLength(DEFAULT_WORD_LENGTH)[0] || FALLBACK_WORD
+    return fallback
+  }
   return list[Math.floor(Math.random() * list.length)]
 }
 
@@ -93,67 +153,62 @@ const evaluateGuess = (guess, solution) => {
   const guessParts = guessLetters.map(parseLetter)
   const solutionParts = solutionLetters.map(parseLetter)
   const result = guessLetters.map((letter) => ({ letter, status: 'absent' }))
-  const syllableCounts = {}
-  const baseCounts = {}
-  const basePresence = {}
+  const lockedGuess = Array(guessParts.length).fill(false)
+  const lockedSolution = Array(solutionParts.length).fill(false)
 
-  solutionParts.forEach((part) => {
-    syllableCounts[part.syllable] = (syllableCounts[part.syllable] || 0) + 1
-    if (part.base) {
-      baseCounts[part.base] = (baseCounts[part.base] || 0) + 1
-      basePresence[part.base] = true
-    }
-  })
-
+  // First pass: lock exact syllables and same-position base matches.
   solutionParts.forEach((part, index) => {
-    if (part.syllable === guessParts[index]?.syllable) {
+    const guessPart = guessParts[index]
+    if (!guessPart) return
+    if (part.syllable === guessPart.syllable) {
       result[index].status = 'correct'
-      syllableCounts[part.syllable] -= 1
-      if (part.base) {
-        baseCounts[part.base] -= 1
-      }
+      lockedGuess[index] = true
+      lockedSolution[index] = true
+      return
+    }
+    if (part.base && part.base === guessPart.base) {
+      result[index].status = 'half-correct'
+      lockedGuess[index] = true
+      lockedSolution[index] = true
     }
   })
 
-  guessParts.forEach((part, index) => {
-    if (result[index].status === 'correct') return
-    const solutionPart = solutionParts[index]
+  // Second pass: match remaining guess letters to remaining solution letters.
+  guessParts.forEach((part, guessIndex) => {
+    if (lockedGuess[guessIndex]) return
 
-    if (part.base) {
-      if (part.base === solutionPart?.base) {
-        result[index].status = 'half-correct'
-        if (baseCounts[part.base] > 0) baseCounts[part.base] -= 1
-        return
+    let matchIndex = -1
+    for (let i = 0; i < solutionParts.length; i += 1) {
+      if (lockedSolution[i]) continue
+      if (solutionParts[i].syllable === part.syllable) {
+        matchIndex = i
+        break
       }
+    }
 
-      if (!basePresence[part.base]) {
-        result[index].status = 'absent'
-        return
-      }
-
-      if (syllableCounts[part.syllable] > 0) {
-        result[index].status = 'present'
-        syllableCounts[part.syllable] -= 1
-        if (baseCounts[part.base] > 0) baseCounts[part.base] -= 1
-        return
-      }
-
-      if (baseCounts[part.base] > 0) {
-        result[index].status = 'half-present'
-        baseCounts[part.base] -= 1
-        return
-      }
-
-      result[index].status = 'absent'
+    if (matchIndex !== -1) {
+      result[guessIndex].status = 'present'
+      lockedSolution[matchIndex] = true
       return
     }
 
-    if (syllableCounts[part.syllable] > 0) {
-      result[index].status = 'present'
-      syllableCounts[part.syllable] -= 1
-    } else {
-      result[index].status = 'absent'
+    if (part.base) {
+      for (let i = 0; i < solutionParts.length; i += 1) {
+        if (lockedSolution[i]) continue
+        if (solutionParts[i].base === part.base) {
+          matchIndex = i
+          break
+        }
+      }
     }
+
+    if (matchIndex !== -1) {
+      result[guessIndex].status = 'half-present'
+      lockedSolution[matchIndex] = true
+      return
+    }
+
+    result[guessIndex].status = 'absent'
   })
 
   return result
@@ -164,18 +219,21 @@ const buildSyllables = (consonant) => (
 )
 
 function App() {
-  const [solution, setSolution] = useState(() => pickRandomWord())
+  const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
+  const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH))
   const [guesses, setGuesses] = useState([])
   const [currentGuess, setCurrentGuess] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [isWin, setIsWin] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
   const [activeConsonant, setActiveConsonant] = useState('')
+  const [inputMode, setInputMode] = useState('vowels')
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
 
   const appendLetter = (letter) => {
     if (isGameOver) return
     const letters = splitGraphemes(currentGuess)
-    if (letters.length >= WORD_LENGTH) return
+    if (letters.length >= wordLength) return
     setCurrentGuess([...letters, letter].join(''))
   }
 
@@ -197,8 +255,8 @@ function App() {
 
     const letters = splitGraphemes(currentGuess)
 
-    if (letters.length !== WORD_LENGTH) {
-      setStatusMessage('5 எழுத்துகள் உள்ள சொல்லை முழுமையாக நிரப்பவும்.')
+    if (letters.length !== wordLength) {
+      setStatusMessage(`${wordLength} எழுத்துகள் உள்ள சொல்லை முழுமையாக நிரப்பவும்.`)
       return
     }
 
@@ -222,8 +280,14 @@ function App() {
     }
   }
 
-  const startNewGame = () => {
-    setSolution(pickRandomWord())
+  const startNewGame = (nextLength = wordLength) => {
+    const length = typeof nextLength === 'number' ? nextLength : wordLength
+    const list = getWordsForLength(length)
+    if (list.length === 0) {
+      setStatusMessage(`No ${length} letter words configured.`)
+      return
+    }
+    setSolution(pickRandomWord(length))
     setGuesses([])
     setCurrentGuess('')
     setStatusMessage('')
@@ -246,15 +310,54 @@ function App() {
     })
   })
 
+  const showSyllables = inputMode === 'consonants' && activeConsonant
+
   return (
     <div className="app">
-      <header className="title">
-        <h1>தமிழ் வார்டில்</h1>
-        <p>5 எழுத்து தமிழ் சொல்லை 6 முயற்சிகளில் கண்டுபிடிக்கவும்.</p>
-      </header>
+      
 
       <div className="layout">
-        <section className="board" role="grid" aria-label="Tamil Wordle board">
+        <section className="top-controls" aria-label="Game options">
+          <div className="top-row">
+            <div className="length-toggle" role="group" aria-label="Word length">
+              <button
+                type="button"
+                className={`length-button ${wordLength === 4 ? 'active' : ''}`}
+                onClick={() => {
+                  setWordLength(4)
+                  setInputMode('vowels')
+                  setActiveConsonant('')
+                  startNewGame(4)
+                }}
+                disabled={isGameOver}
+              >
+                4 Letters
+              </button>
+              <button
+                type="button"
+                className={`length-button ${wordLength === 5 ? 'active' : ''}`}
+                onClick={() => {
+                  setWordLength(5)
+                  setInputMode('vowels')
+                  setActiveConsonant('')
+                  startNewGame(5)
+                }}
+                disabled={isGameOver}
+              >
+                5 Letters
+              </button>
+            </div>
+            <button type="button" className="help-button" onClick={() => setIsHelpOpen(true)}>
+              விதிகள்
+            </button>
+          </div>
+        </section>
+
+        <section
+          className={`board ${wordLength === 4 ? 'length-4' : 'length-5'}`}
+          role="grid"
+          aria-label="Tamil Wordle board"
+        >
           {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
             const guess = guesses[rowIndex] || (rowIndex === guesses.length ? currentGuess : '')
             const letters = splitGraphemes(guess)
@@ -262,7 +365,7 @@ function App() {
 
             return (
               <div className="row" role="row" key={`row-${rowIndex}`}>
-                {Array.from({ length: WORD_LENGTH }).map((__, colIndex) => {
+                {Array.from({ length: wordLength }).map((__, colIndex) => {
                   const letter = letters[colIndex] || ''
                   const status = evaluation ? evaluation[colIndex]?.status : letter ? 'filled' : 'empty'
 
@@ -282,97 +385,145 @@ function App() {
         </section>
 
         <section className="input-panel" aria-label="Tamil letter input">
-          <details className="panel">
-            <summary className="panel-title">
-              <h2>{'\u0B89\u0BAF\u0BBF\u0BB0\u0BC6\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BB3\u0BCD'}</h2>
-            </summary>
-            <div className="panel-content">
-              <div className="key-grid">
-                {VOWELS.map((vowel) => (
+          {inputMode === 'vowels' && (
+            <div className="panel">
+              <div className="panel-content">
+                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
                   <button
-                    key={vowel.letter}
                     type="button"
-                    className="key"
-                    onClick={() => appendLetter(vowel.letter)}
+                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
+                    onClick={() => {
+                      setInputMode('vowels')
+                      setActiveConsonant('')
+                    }}
                     disabled={isGameOver}
+                    aria-pressed={inputMode === 'vowels'}
                   >
-                    {vowel.letter}
+                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
                   </button>
-                ))}
-              </div>
-            </div>
-          </details>
-
-          <details className="panel" open>
-            <summary className="panel-title">
-              <h2>{'\u0BAE\u0BC6\u0BAF\u0BCD\u0BAF\u0BC6\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BB3\u0BCD'}</h2>
-            </summary>
-            <div className="panel-content">
-              <div className="key-grid consonants">
-                {CONSONANTS.map((consonant) => (
                   <button
-                    key={consonant}
                     type="button"
-                    className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                    onClick={() => setActiveConsonant(consonant)}
+                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
+                    onClick={() => {
+                      setInputMode('consonants')
+                      setActiveConsonant('')
+                    }}
                     disabled={isGameOver}
+                    aria-pressed={inputMode === 'consonants'}
                   >
-                    {consonant}
+                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
                   </button>
-                ))}
-              </div>
-            </div>
-          </details>
-
-          <details className="panel" open>
-            <summary className="panel-title">
-              <h2>{'\u0B89\u0BAF\u0BBF\u0BB0\u0BCD\u0BAE\u0BC6\u0BAF\u0BCD \u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BB3\u0BCD'}</h2>
-            </summary>
-            <div className="panel-content">
-              <p className="helper">{'\u0BAE\u0BC6\u0BAF\u0BCD\u0BAF\u0BC6\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC8 \u0BA4\u0BC7\u0BB0\u0BCD\u0BB5\u0BC1 \u0B9A\u0BC6\u0BAF\u0BCD\u0BA4\u0BC1 \u0B89\u0BAF\u0BBF\u0BB0\u0BC6\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC8 \u0BA4\u0BC7\u0BB0\u0BCD\u0BB5\u0BC1 \u0B9A\u0BC6\u0BAF\u0BCD\u0BAF\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD.'}</p>
-              <div className="key-grid">
-                {syllables.length === 0 ? (
-                  <div className="empty-state">{'\u0BAE\u0BC6\u0BAF\u0BCD\u0BAF\u0BC6\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC8 \u0BA4\u0BC7\u0BB0\u0BCD\u0BB5\u0BC1 \u0B9A\u0BC6\u0BAF\u0BCD\u0BA4\u0BBE\u0BB2\u0BCD \u0B87\u0B99\u0BCD\u0B95\u0BC7 \u0B89\u0BAF\u0BBF\u0BB0\u0BCD\u0BAE\u0BC6\u0BAF\u0BCD\u0B95\u0BB3\u0BCD \u0BB5\u0BB0\u0BC1\u0BAE\u0BCD.'}</div>
-                ) : (
-                  <>
+                </div>
+                <div className="key-grid">
+                  {VOWELS.map((vowel) => (
                     <button
+                      key={vowel.letter}
                       type="button"
                       className="key"
-                      onClick={() => appendLetter(pureConsonant)}
+                      onClick={() => appendLetter(vowel.letter)}
                       disabled={isGameOver}
                     >
-                      {pureConsonant}
+                      {vowel.letter}
                     </button>
-                    {syllables.map((syllable) => (
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {inputMode === 'consonants' && (
+            <div className="panel">
+              <div className="panel-content">
+                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
+                  <button
+                    type="button"
+                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
+                    onClick={() => {
+                      setInputMode('vowels')
+                      setActiveConsonant('')
+                    }}
+                    disabled={isGameOver}
+                    aria-pressed={inputMode === 'vowels'}
+                  >
+                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
+                    onClick={() => {
+                      setInputMode('consonants')
+                      setActiveConsonant('')
+                    }}
+                    disabled={isGameOver}
+                    aria-pressed={inputMode === 'consonants'}
+                  >
+                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
+                  </button>
+                </div>
+                {showSyllables ? (
+                  <>
+                    <div className="key-grid">
                       <button
-                        key={syllable}
                         type="button"
                         className="key"
-                        onClick={() => appendLetter(syllable)}
+                        onClick={() => appendLetter(pureConsonant)}
                         disabled={isGameOver}
                       >
-                        {syllable}
+                        {pureConsonant}
+                      </button>
+                      {syllables.map((syllable) => (
+                        <button
+                          key={syllable}
+                          type="button"
+                          className="key"
+                          onClick={() => appendLetter(syllable)}
+                          disabled={isGameOver}
+                        >
+                          {syllable}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="back-button"
+                        onClick={() => setActiveConsonant('')}
+                        disabled={isGameOver}
+                      >
+                        Back
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="key-grid consonants">
+                    {CONSONANTS.map((consonant) => (
+                      <button
+                        key={consonant}
+                        type="button"
+                        className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                        onClick={() => setActiveConsonant(consonant)}
+                        disabled={isGameOver}
+                      >
+                        {consonant}
                       </button>
                     ))}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
-          </details>
+          )}
 
           <form className="controls" onSubmit={submitGuess}>
             <div className="buttons">
-              <button type="button" onClick={removeLastLetter} disabled={isGameOver}>
-                நீக்கு
+              <button type="button" className="action-delete" onClick={removeLastLetter} disabled={isGameOver}>
+                Delete
               </button>
-              <button type="button" onClick={clearGuess} disabled={isGameOver}>
-                அழி
+              <button type="button" className="action-clear" onClick={clearGuess} disabled={isGameOver}>
+                Clear
               </button>
-              <button type="submit" disabled={isGameOver}>
-                முயற்சி
+              <button type="submit" className="action-enter" disabled={isGameOver}>
+                Enter
               </button>
-              <button type="button" onClick={startNewGame}>
-                புதிய விளையாட்டு
+              <button type="button" onClick={() => startNewGame()}>
+                New Game
               </button>
             </div>
           </form>
@@ -383,9 +534,50 @@ function App() {
         {statusMessage}
       </div>
 
-      <p className="note">
-        சொல் பட்டியலை மாற்ற வேண்டுமெனில் <code>src/App.jsx</code> உள்ள <code>RAW_WORDS</code> பட்டியலை மாற்றவும்.
-      </p>
+      {isHelpOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsHelpOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="விளையாட்டு வழிமுறை"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>விளையாட்டு வழிமுறை</h2>
+              <button type="button" className="modal-close" onClick={() => setIsHelpOpen(false)}>
+                ×
+              </button>
+            </div>
+            <p className="modal-text">
+              நீங்கள் தேர்ந்தெடுத்த முறைக்கு ஏற்ப 4 அல்லது 5 எழுத்துகள் கொண்ட ஒரு சொல்லை உள்ளிடுங்கள்.
+            </p>
+            <p className="modal-text">நிறங்கள் குறிக்கும் அர்த்தம்:</p>
+            <div className="rule-list">
+              <div className="rule-item">
+                <span className="mini-tile correct" aria-hidden="true" />
+                <span>முழு பச்சை — சரியான அசை, சரியான இடம்.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile present" aria-hidden="true" />
+                <span>முழு ஆரஞ்சு — அசை சொல்லில் உள்ளது, ஆனால் இடம் தவறு.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-correct" aria-hidden="true" />
+                <span>அரை பச்சை (கோணமாக பச்சை நிறம்) — மெய்யெழுத்து சரி, இடம் சரி. உயிர் சேர்க்கை தவறு.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present" aria-hidden="true" />
+                <span>அரை ஆரஞ்சு (கோணமாக ஆரஞ்சு நிறம்) — மெய்யெழுத்து சரி. ஆனால் இடமும் உயிரும் தவறு.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile absent" aria-hidden="true" />
+                <span>சாம்பல் — அந்த மெய்யெழுத்து சொல்லில் இல்லை.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
