@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import './App.css'
 
 const DEFAULT_WORD_LENGTH = 5
@@ -229,6 +229,10 @@ function App() {
   const [activeConsonant, setActiveConsonant] = useState('')
   const [inputMode, setInputMode] = useState('vowels')
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false)
+  const [isAppleMobile, setIsAppleMobile] = useState(false)
+  const recognitionRef = useRef(null)
 
   const appendLetter = (letter) => {
     if (isGameOver) return
@@ -311,6 +315,52 @@ function App() {
   })
 
   const showSyllables = inputMode === 'consonants' && activeConsonant
+
+  useEffect(() => {
+    const ua = navigator.userAgent || ''
+    const appleMobile = /iPhone|iPad|iPod/i.test(ua)
+    setIsAppleMobile(appleMobile)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) return
+    setIsSpeechSupported(true)
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'ta-IN'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim()
+      if (!transcript) return
+      const letters = splitGraphemes(transcript)
+      if (letters.length !== wordLength) {
+        setStatusMessage(`${wordLength} எழுத்துகள் உள்ள சொல்லை முழுமையாக நிரப்பவும்.`)
+        return
+      }
+      setCurrentGuess(letters.join(''))
+      setStatusMessage('')
+      setInputMode('vowels')
+      setActiveConsonant('')
+    }
+    recognition.onerror = () => {
+      setStatusMessage('குரல் உள்ளீடு கிடைக்கவில்லை. மீண்டும் முயற்சிக்கவும்.')
+    }
+    recognition.onend = () => {
+      setIsListening(false)
+    }
+    recognitionRef.current = recognition
+    return () => {
+      recognition.abort()
+    }
+  }, [wordLength])
+
+  const toggleListening = () => {
+    if (!isSpeechSupported || isAppleMobile || isGameOver) return
+    if (isListening) {
+      recognitionRef.current?.stop()
+      return
+    }
+    setIsListening(true)
+    recognitionRef.current?.start()
+  }
 
   return (
     <div className="app">
@@ -413,6 +463,21 @@ function App() {
                   >
                     {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
                   </button>
+                  {!isAppleMobile && (
+                    <button
+                      type="button"
+                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
+                      onClick={toggleListening}
+                      disabled={isGameOver || !isSpeechSupported}
+                      aria-pressed={isListening}
+                    >
+                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
                 <div className="key-grid">
                   {VOWELS.map((vowel) => (
@@ -459,6 +524,21 @@ function App() {
                   >
                     {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
                   </button>
+                  {!isAppleMobile && (
+                    <button
+                      type="button"
+                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
+                      onClick={toggleListening}
+                      disabled={isGameOver || !isSpeechSupported}
+                      aria-pressed={isListening}
+                    >
+                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
                 {showSyllables ? (
                   <>
