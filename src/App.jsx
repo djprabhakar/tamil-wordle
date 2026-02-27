@@ -1,5 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useRef, useState } from 'react'
 import './App.css'
+import famousPersonalities4Text from './data/famous_personalities_4.txt?raw'
+import famousPersonalities5Text from './data/famous_personalities_5.txt?raw'
+import food4Text from './data/food_4.txt?raw'
+import food5Text from './data/food_5.txt?raw'
+import places4Text from './data/places_4.txt?raw'
+import places5Text from './data/places_5.txt?raw'
+import commonlyUsedWords4Text from './data/commonly_used_words_4.txt?raw'
+import commonlyUsedWords5Text from './data/commonly_used_words_5.txt?raw'
+import history4Text from './data/history_4.txt?raw'
+import history5Text from './data/history_5.txt?raw'
 
 const DEFAULT_WORD_LENGTH = 5
 const MAX_GUESSES = 6
@@ -98,6 +108,24 @@ const RAW_WORDS_4 = [
   'நீச்சல்'
 ]
 
+const CATEGORY_DEFINITIONS = [
+  { id: 'famous_personalities', label: 'பிரபலங்கள் (Famous Personalities)' },
+  { id: 'food', label: 'உணவு (Food)' },
+  { id: 'places', label: 'இடங்கள் (Places)' },
+  { id: 'commonly_used_words', label: 'அன்றாட சொற்கள் (Common words)' },
+  { id: 'history', label: 'வரலாறு (History)' },
+]
+
+const CATEGORY_WORD_FILES = {
+  famous_personalities: { 4: famousPersonalities4Text, 5: famousPersonalities5Text },
+  food: { 4: food4Text, 5: food5Text },
+  places: { 4: places4Text, 5: places5Text },
+  commonly_used_words: { 4: commonlyUsedWords4Text, 5: commonlyUsedWords5Text },
+  history: { 4: history4Text, 5: history5Text },
+}
+
+const DEFAULT_SELECTED_CATEGORIES = ['commonly_used_words']
+
 const FALLBACK_WORD = 'மரங்கள்'
 
 const splitGraphemes = (value) => {
@@ -107,19 +135,46 @@ const splitGraphemes = (value) => {
   return Array.from(value)
 }
 
-const getWordsForLength = (length) => {
-  if (length === 4) return RAW_WORDS_4
-  if (length === 5) return RAW_WORDS_5
-  return []
+const parseWordList = (rawText) => (
+  rawText
+    .split(/\r?\n/)
+    .map((word) => word.trim())
+    .filter(Boolean)
+)
+
+const WORD_BANK = Object.fromEntries(
+  Object.entries(CATEGORY_WORD_FILES).map(([categoryId, byLength]) => [
+    categoryId,
+    Object.fromEntries(
+      Object.entries(byLength).map(([length, rawText]) => [
+        Number(length),
+        parseWordList(rawText),
+      ]),
+    ),
+  ]),
+)
+
+const getCategoryWordPools = (length, selectedCategories) => {
+  const categoriesToUse = selectedCategories.length > 0
+    ? selectedCategories
+    : CATEGORY_DEFINITIONS.map((category) => category.id)
+
+  return categoriesToUse
+    .map((categoryId) => ({
+      categoryId,
+      words: (WORD_BANK[categoryId]?.[length] || []).filter((word) => splitGraphemes(word).length === length),
+    }))
+    .filter((pool) => pool.words.length > 0)
 }
 
-const pickRandomWord = (length) => {
-  const list = getWordsForLength(length)
-  if (list.length === 0) {
-    const fallback = getWordsForLength(DEFAULT_WORD_LENGTH)[0] || FALLBACK_WORD
-    return fallback
+const pickRandomWord = (length, selectedCategories) => {
+  const pools = getCategoryWordPools(length, selectedCategories)
+  if (pools.length === 0) {
+    return { word: FALLBACK_WORD, categoryId: null }
   }
-  return list[Math.floor(Math.random() * list.length)]
+  const randomPool = pools[Math.floor(Math.random() * pools.length)]
+  const randomWord = randomPool.words[Math.floor(Math.random() * randomPool.words.length)]
+  return { word: randomWord, categoryId: randomPool.categoryId }
 }
 
 const VOWEL_SIGN_MAP = VOWELS.reduce((acc, vowel) => {
@@ -211,7 +266,33 @@ const evaluateGuess = (guess, solution) => {
     result[guessIndex].status = 'absent'
   })
 
+  result.forEach((entry, index) => {
+    if (entry.status !== 'half-present' && entry.status !== 'absent') return
+    const guessVowel = guessParts[index]?.vowel
+    const solutionVowelAtIndex = solutionParts[index]?.vowel
+    if (!guessVowel || !solutionVowelAtIndex) return
+    entry.vowelStatus = guessVowel === solutionVowelAtIndex ? 'vowel-correct' : 'vowel-wrong'
+  })
+
   return result
+}
+
+const getRuleText = (entry) => {
+  const statusText = {
+    correct: 'முழு சரி',
+    present: 'இடம் தவறு',
+    'half-correct': 'மெய் சரி, உயிர் தவறு',
+    'half-present': 'மெய் உள்ளது, இடம்/உயிர் தவறு',
+    absent: 'மெய் இல்லை',
+  }[entry.status] || 'தகவல் இல்லை'
+
+  if (entry.vowelStatus === 'vowel-correct') {
+    return `${statusText} | உயிர்-இடம் சரி`
+  }
+  if (entry.vowelStatus === 'vowel-wrong') {
+    return `${statusText} | உயிர்-இடம் தவறு`
+  }
+  return statusText
 }
 
 const buildSyllables = (consonant) => (
@@ -220,7 +301,10 @@ const buildSyllables = (consonant) => (
 
 function App() {
   const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
-  const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH))
+  const [selectedCategories, setSelectedCategories] = useState(DEFAULT_SELECTED_CATEGORIES)
+  const [pendingCategories, setPendingCategories] = useState(DEFAULT_SELECTED_CATEGORIES)
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
+  const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH, DEFAULT_SELECTED_CATEGORIES).word)
   const [guesses, setGuesses] = useState([])
   const [currentGuess, setCurrentGuess] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
@@ -233,6 +317,11 @@ function App() {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false)
   const [isAppleMobile, setIsAppleMobile] = useState(false)
   const recognitionRef = useRef(null)
+
+  const selectedCategoryNames = CATEGORY_DEFINITIONS
+    .filter((category) => selectedCategories.includes(category.id))
+    .map((category) => category.label)
+    .join(', ')
 
   const appendLetter = (letter) => {
     if (isGameOver) return
@@ -284,20 +373,46 @@ function App() {
     }
   }
 
-  const startNewGame = (nextLength = wordLength) => {
+  const startNewGame = (nextLength = wordLength, categoryIds = selectedCategories) => {
     const length = typeof nextLength === 'number' ? nextLength : wordLength
-    const list = getWordsForLength(length)
-    if (list.length === 0) {
-      setStatusMessage(`No ${length} letter words configured.`)
+    const pools = getCategoryWordPools(length, categoryIds)
+    if (pools.length === 0) {
+      setStatusMessage(`No ${length} letter words configured for selected categories.`)
       return
     }
-    setSolution(pickRandomWord(length))
+    const nextSolution = pickRandomWord(length, categoryIds)
+    setSolution(nextSolution.word)
     setGuesses([])
     setCurrentGuess('')
     setStatusMessage('')
     setIsWin(false)
     setIsGameOver(false)
     setActiveConsonant('')
+  }
+
+  const openCategoryDialog = () => {
+    setPendingCategories(selectedCategories)
+    setIsCategoryDialogOpen(true)
+  }
+
+  const applyCategories = () => {
+    if (pendingCategories.length === 0) {
+      setStatusMessage('Choose at least one category.')
+      return
+    }
+    setSelectedCategories(pendingCategories)
+    setIsCategoryDialogOpen(false)
+    setInputMode('vowels')
+    setActiveConsonant('')
+    startNewGame(wordLength, pendingCategories)
+  }
+
+  const togglePendingCategory = (categoryId) => {
+    setPendingCategories((current) => (
+      current.includes(categoryId)
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId]
+    ))
   }
 
   const syllables = activeConsonant ? buildSyllables(activeConsonant) : []
@@ -315,6 +430,10 @@ function App() {
   })
 
   const showSyllables = inputMode === 'consonants' && activeConsonant
+  const evaluatedGuesses = guesses.map((guess) => ({
+    guess,
+    evaluation: evaluateGuess(guess, solution),
+  }))
 
   useEffect(() => {
     const ua = navigator.userAgent || ''
@@ -396,11 +515,21 @@ function App() {
               >
                 5 Letters
               </button>
+              <button
+                type="button"
+                className="category-button"
+                onClick={openCategoryDialog}
+                aria-label="Choose categories"
+                title="Choose categories"
+              >
+                <img src="/category.svg" alt="" aria-hidden="true" />
+              </button>
             </div>
-            <button type="button" className="help-button" onClick={() => setIsHelpOpen(true)}>
-              விதிகள்
+            <button type="button" className="help-button icon-only" onClick={() => setIsHelpOpen(true)} aria-label="விதிகள்" title = "விதிகள்">
+              <img src="/help.png" alt="" aria-hidden="true" />
             </button>
           </div>
+          <p className="category-summary">Categories: {selectedCategoryNames || 'None selected'}</p>
         </section>
 
         <section
@@ -417,13 +546,15 @@ function App() {
               <div className="row" role="row" key={`row-${rowIndex}`}>
                 {Array.from({ length: wordLength }).map((__, colIndex) => {
                   const letter = letters[colIndex] || ''
-                  const status = evaluation ? evaluation[colIndex]?.status : letter ? 'filled' : 'empty'
+                  const evaluationCell = evaluation ? evaluation[colIndex] : null
+                  const status = evaluationCell ? evaluationCell.status : letter ? 'filled' : 'empty'
+                  const vowelStatus = evaluationCell?.vowelStatus || ''
 
                   return (
                     <div
                       key={`tile-${rowIndex}-${colIndex}`}
                       role="gridcell"
-                      className={`tile ${status}`}
+                      className={`tile ${status} ${vowelStatus}`}
                     >
                       {letter}
                     </div>
@@ -432,6 +563,29 @@ function App() {
               </div>
             )
           })}
+        </section>
+
+        <section className="guess-rules" aria-label="Guess rule breakdown">
+          <h3>ஒவ்வொரு முயற்சிக்கும் விதி விளக்கம்</h3>
+          {evaluatedGuesses.length === 0 ? (
+            <p className="guess-rules-empty">முயற்சி செய்த பிறகு இங்கே விதி விளக்கம் காட்டப்படும்.</p>
+          ) : (
+            <div className="guess-rules-list">
+              {evaluatedGuesses.map(({ guess, evaluation }, rowIndex) => (
+                <div className="guess-rule-row" key={`guess-rule-${rowIndex}`}>
+                  <p className="guess-rule-word">{guess}</p>
+                  <div className="guess-rule-cells">
+                    {evaluation.map((entry, colIndex) => (
+                      <div className="guess-rule-cell" key={`guess-rule-cell-${rowIndex}-${colIndex}`}>
+                        <span className={`mini-tile ${entry.status} ${entry.vowelStatus || ''}`} aria-hidden="true" />
+                        <span>{entry.letter}: {getRuleText(entry)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="input-panel" aria-label="Tamil letter input">
@@ -613,6 +767,45 @@ function App() {
       <div className={`status ${isWin ? 'win' : ''}`} aria-live="polite">
         {statusMessage}
       </div>
+
+      {isCategoryDialogOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsCategoryDialogOpen(false)}>
+          <div
+            className="modal category-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="சொல் வகைகள்"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>சொல் வகைகள்</h2>
+              <button type="button" className="modal-close" onClick={() => setIsCategoryDialogOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="category-list">
+              {CATEGORY_DEFINITIONS.map((category) => (
+                <label key={category.id} className="category-item">
+                  <input
+                    type="checkbox"
+                    checked={pendingCategories.includes(category.id)}
+                    onChange={() => togglePendingCategory(category.id)}
+                  />
+                  <span>{category.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="category-actions">
+              <button type="button" className="help-lang-button" onClick={() => setIsCategoryDialogOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="help-lang-button active" onClick={applyCategories}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isHelpOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsHelpOpen(false)}>

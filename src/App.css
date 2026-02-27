@@ -75,6 +75,20 @@
   background: #e08df7;
 }
 
+.help-button.icon-only {
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.help-button.icon-only img {
+  width: 1.2rem;
+  height: 1.2rem;
+  object-fit: contain;
+}
+
 .board {
   display: grid;
   gap: 0.6rem;
@@ -146,6 +160,71 @@
   background: var(--absent);
   border-color: var(--absent);
   color: #f4f4f4;
+}
+
+.tile.vowel-correct {
+  outline: 2px solid var(--correct);
+  outline-offset: -3px;
+}
+
+.tile.vowel-wrong {
+  outline: 2px solid #d64545;
+  outline-offset: -3px;
+}
+
+.guess-rules {
+  display: none;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--panel);
+  border-radius: 1rem;
+  box-shadow: 0 14px 30px var(--shadow);
+}
+
+.guess-rules h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.guess-rules-empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.guess-rules-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.guess-rule-row {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--tile-border);
+}
+
+.guess-rule-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.guess-rule-word {
+  margin: 0;
+  font-weight: 700;
+}
+
+.guess-rule-cells {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.guess-rule-cell {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.88rem;
 }
 
 .input-panel {
@@ -371,7 +450,7 @@
 
 .length-toggle {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: 0.5rem;
 }
 
@@ -399,6 +478,38 @@
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+.category-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e1b16;
+  background: #efe6d7;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.category-button img {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.category-button:hover {
+  transform: translateY(-1px);
+  background: #e6dac7;
+}
+
+.category-summary {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .buttons {
@@ -502,8 +613,57 @@
   font-size: 0.95rem;
 }
 
+.help-lang-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.help-lang-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #efe6d7;
+  color: #1e1b16;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.help-lang-button:hover {
+  transform: translateY(-1px);
+}
+
+.help-lang-button.active {
+  background: #f6cf4d;
+}
+
 .rule-list {
   display: grid;
+  gap: 0.5rem;
+}
+
+.category-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.category-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+}
+
+.category-item input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.category-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 0.5rem;
 }
 
@@ -547,6 +707,26 @@
 .mini-tile.absent {
   background: var(--absent);
   border-color: var(--absent);
+}
+
+.mini-tile.vowel-correct-legend {
+  outline: 1px solid var(--correct);
+  outline-offset: -2px;
+}
+
+.mini-tile.vowel-wrong-legend {
+  outline: 1px solid #d64545;
+  outline-offset: -2px;
+}
+
+.mini-tile.vowel-correct {
+  outline: 1px solid var(--correct);
+  outline-offset: -2px;
+}
+
+.mini-tile.vowel-wrong {
+  outline: 1px solid #d64545;
+  outline-offset: -2px;
 }
 
 .note {

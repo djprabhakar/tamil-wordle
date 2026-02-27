@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Categories icon">
+  <rect x="2" y="2" width="26" height="26" rx="6" fill="#7fb2df" stroke="#1f1f24" stroke-width="2"/>
+  <rect x="36" y="2" width="26" height="26" rx="6" fill="#f86b76" stroke="#1f1f24" stroke-width="2"/>
+  <rect x="2" y="36" width="26" height="26" rx="6" fill="#95d07d" stroke="#1f1f24" stroke-width="2"/>
+  <rect x="40" y="40" width="20" height="20" rx="3" transform="rotate(45 50 50)" fill="#f3df7f" stroke="#1f1f24" stroke-width="2"/>
+</svg>
