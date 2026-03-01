@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f4efe5;
   --ink: #1e1b16;
   --muted: #7b6f61;
@@ -44,7 +44,7 @@
   display: grid;
   grid-template-columns: minmax(320px, 1.1fr) minmax(280px, 0.9fr);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .top-controls {
@@ -230,6 +230,7 @@
 .input-panel {
   display: grid;
   gap: 0.6rem;
+  align-self: end;
 }
 
 .panel {
@@ -386,22 +387,52 @@
   color: var(--muted);
 }
 
-.key-grid {
+.keyboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
-  gap: 0.55rem;
+  gap: 0.35rem;
 }
 
-.key-grid.consonants {
-  grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
+.key-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.key-row-top {
+  grid-template-columns: repeat(10, minmax(max-content, 1fr));
+}
+
+.key-row-middle {
+  grid-template-columns: repeat(9, minmax(max-content, 1fr));
+}
+
+.key-row-lower {
+  grid-template-columns: repeat(9, minmax(max-content, 1fr));
+}
+
+.key-action {
+  display: grid;
+  place-items: center;
+}
+
+.key-action img {
+  width: 1.45rem;
+  height: 1.45rem;
+  object-fit: contain;
+}
+
+.key-action-enter {
+  background: #dbeeff;
 }
 
 .key {
   border: none;
-  border-radius: 12px;
-  padding: 0.35rem 0.25rem;
-  font-size: calc(1.1rem + 0.5pt);
-  font-weight: 600;
+  border-radius: 4px;
+  min-height: 2.9rem;
+  padding: 0.3rem 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
   color: var(--ink);
   background: #fff;
   cursor: pointer;
@@ -412,11 +443,6 @@
 .key:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 22px rgba(30, 27, 22, 0.15);
-}
-
-.key.active {
-  background: #1e1b16;
-  color: #fffaf0;
 }
 
 .key.correct {
@@ -432,6 +458,20 @@
 .key.absent {
   background: var(--absent);
   color: #f4f4f4;
+}
+
+.key-mic {
+  background: #dbeeff;
+}
+
+.key-mic.active {
+  background: #c4e2ff;
+}
+
+.key.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .empty-state {
@@ -797,3 +837,4 @@
     overflow-y: auto;
   }
 }
+

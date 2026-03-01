@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import famousPersonalities4Text from './data/famous_personalities_4.txt?raw'
 import famousPersonalities5Text from './data/famous_personalities_5.txt?raw'
@@ -295,9 +295,63 @@ const getRuleText = (entry) => {
   return statusText
 }
 
-const buildSyllables = (consonant) => (
+const KEYBOARD_ROW_COUNTS = {
+  top: 10,
+  middle: 9,
+  lower: 6,
+  bottom: 0,
+}
+const KEYBOARD_TEXT_KEY_COUNT = Object.values(KEYBOARD_ROW_COUNTS).reduce((total, count) => total + count, 0)
+
+const shuffle = (items) => {
+  const next = [...items]
+  for (let i = next.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[next[i], next[j]] = [next[j], next[i]]
+  }
+  return next
+}
+
+const sampleWithoutReplacement = (pool, count) => shuffle(pool).slice(0, count)
+
+const ALL_TAMIL_SYLLABLES = CONSONANTS.flatMap((consonant) => (
   VOWELS.map((vowel) => (vowel.sign ? `${consonant}${vowel.sign}` : consonant))
-)
+))
+
+const buildKeyboardTextKeys = (solution) => {
+  const targetSyllables = [...new Set(splitGraphemes(solution))]
+  const targetSet = new Set(targetSyllables)
+  const keys = [...targetSyllables]
+  const remainingSlots = Math.max(KEYBOARD_TEXT_KEY_COUNT - keys.length, 0)
+
+  if (remainingSlots === 0) {
+    return shuffle(keys).slice(0, KEYBOARD_TEXT_KEY_COUNT)
+  }
+
+  const vowelPool = VOWELS
+    .map((vowel) => vowel.letter)
+    .filter((vowel) => !targetSet.has(vowel))
+  const syllablePool = ALL_TAMIL_SYLLABLES.filter((syllable) => !targetSet.has(syllable))
+
+  const vowelCount = Math.min(Math.round(remainingSlots * 0.2), vowelPool.length)
+  const syllableCount = remainingSlots - vowelCount
+
+  const pickedVowels = sampleWithoutReplacement(vowelPool, vowelCount)
+  const pickedSyllables = sampleWithoutReplacement(syllablePool, syllableCount)
+
+  keys.push(...pickedVowels, ...pickedSyllables)
+
+  if (keys.length < KEYBOARD_TEXT_KEY_COUNT) {
+    const fillerPool = [...vowelPool, ...syllablePool]
+    let index = 0
+    while (keys.length < KEYBOARD_TEXT_KEY_COUNT && fillerPool.length > 0) {
+      keys.push(fillerPool[index % fillerPool.length])
+      index += 1
+    }
+  }
+
+  return shuffle(keys).slice(0, KEYBOARD_TEXT_KEY_COUNT)
+}
 
 function App() {
   const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
@@ -310,8 +364,6 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('')
   const [isWin, setIsWin] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
-  const [activeConsonant, setActiveConsonant] = useState('')
-  const [inputMode, setInputMode] = useState('vowels')
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeechSupported, setIsSpeechSupported] = useState(false)
@@ -337,13 +389,7 @@ function App() {
     setCurrentGuess(letters.join(''))
   }
 
-  const clearGuess = () => {
-    if (isGameOver) return
-    setCurrentGuess('')
-  }
-
-  const submitGuess = (event) => {
-    event.preventDefault()
+  const submitCurrentGuess = () => {
     if (isGameOver) return
 
     const letters = splitGraphemes(currentGuess)
@@ -356,7 +402,6 @@ function App() {
     const nextGuesses = [...guesses, currentGuess]
     setGuesses(nextGuesses)
     setCurrentGuess('')
-    setActiveConsonant('')
 
     if (currentGuess === solution) {
       setIsWin(true)
@@ -387,7 +432,6 @@ function App() {
     setStatusMessage('')
     setIsWin(false)
     setIsGameOver(false)
-    setActiveConsonant('')
   }
 
   const openCategoryDialog = () => {
@@ -402,8 +446,6 @@ function App() {
     }
     setSelectedCategories(pendingCategories)
     setIsCategoryDialogOpen(false)
-    setInputMode('vowels')
-    setActiveConsonant('')
     startNewGame(wordLength, pendingCategories)
   }
 
@@ -415,25 +457,45 @@ function App() {
     ))
   }
 
-  const syllables = activeConsonant ? buildSyllables(activeConsonant) : []
-  const pureConsonant = activeConsonant ? `${activeConsonant}${PULLI}` : ''
-  const solutionBases = new Set(splitGraphemes(solution).map((letter) => parseLetter(letter).base).filter(Boolean))
-  const wrongConsonants = new Set()
-
-  guesses.forEach((guess) => {
-    splitGraphemes(guess).forEach((letter) => {
-      const base = parseLetter(letter).base
-      if (base && !solutionBases.has(base)) {
-        wrongConsonants.add(base)
-      }
-    })
-  })
-
-  const showSyllables = inputMode === 'consonants' && activeConsonant
+  const keyboardTextKeys = useMemo(() => buildKeyboardTextKeys(solution), [solution])
   const evaluatedGuesses = guesses.map((guess) => ({
     guess,
     evaluation: evaluateGuess(guess, solution),
   }))
+
+  const keyStatuses = useMemo(() => {
+    const priority = {
+      absent: 1,
+      'half-present': 2,
+      'half-correct': 2,
+      present: 3,
+      correct: 4,
+    }
+
+    const classByStatus = {
+      absent: 'absent',
+      'half-present': 'present',
+      'half-correct': 'present',
+      present: 'present',
+      correct: 'correct',
+    }
+
+    const statusMap = new Map()
+    evaluatedGuesses.forEach(({ evaluation }) => {
+      evaluation.forEach((entry) => {
+        const nextPriority = priority[entry.status] || 0
+        const current = statusMap.get(entry.letter)
+        if (!current || nextPriority > current.priority) {
+          statusMap.set(entry.letter, {
+            priority: nextPriority,
+            className: classByStatus[entry.status] || '',
+          })
+        }
+      })
+    })
+
+    return statusMap
+  }, [evaluatedGuesses])
 
   useEffect(() => {
     const ua = navigator.userAgent || ''
@@ -456,8 +518,6 @@ function App() {
       }
       setCurrentGuess(letters.join(''))
       setStatusMessage('')
-      setInputMode('vowels')
-      setActiveConsonant('')
     }
     recognition.onerror = () => {
       setStatusMessage('குரல் உள்ளீடு கிடைக்கவில்லை. மீண்டும் முயற்சிக்கவும்.')
@@ -481,6 +541,81 @@ function App() {
     recognitionRef.current?.start()
   }
 
+  const renderTamilKeyboard = () => {
+    const topRow = keyboardTextKeys.slice(0, KEYBOARD_ROW_COUNTS.top)
+    const middleRow = keyboardTextKeys.slice(KEYBOARD_ROW_COUNTS.top, KEYBOARD_ROW_COUNTS.top + KEYBOARD_ROW_COUNTS.middle)
+    const lowerText = keyboardTextKeys.slice(
+      KEYBOARD_ROW_COUNTS.top + KEYBOARD_ROW_COUNTS.middle,
+      KEYBOARD_ROW_COUNTS.top + KEYBOARD_ROW_COUNTS.middle + KEYBOARD_ROW_COUNTS.lower,
+    )
+    const lowerLeft = lowerText.slice(0, 3)
+    const lowerRight = lowerText.slice(3)
+
+    const renderTextKey = (value, keyId) => (
+      <button
+        key={keyId}
+        type="button"
+        className={`key ${keyStatuses.get(value)?.className || ''}`.trim()}
+        onClick={() => appendLetter(value)}
+        disabled={isGameOver}
+      >
+        {value}
+      </button>
+    )
+
+    return (
+      <div className="keyboard">
+        <div className="key-row key-row-top">
+          {topRow.map((value, index) => renderTextKey(value, `kbd-top-${index}`))}
+        </div>
+
+        <div className="key-row key-row-middle">
+          {middleRow.map((value, index) => renderTextKey(value, `kbd-middle-${index}`))}
+        </div>
+
+        <div className="key-row key-row-lower">
+          <button
+            type="button"
+            className="key key-action key-action-enter"
+            onClick={submitCurrentGuess}
+            disabled={isGameOver}
+            aria-label="Enter"
+            title="Enter"
+          >
+            <img src="/enter.svg" alt="" aria-hidden="true" />
+          </button>
+          {lowerLeft.map((value, index) => renderTextKey(value, `kbd-lower-left-${index}`))}
+          <button
+            type="button"
+            className={`key key-action key-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`.trim()}
+            onClick={toggleListening}
+            disabled={isGameOver || !isSpeechSupported || isAppleMobile}
+            aria-label="Microphone"
+            aria-pressed={isListening}
+            title="Microphone"
+          >
+            <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="2.5" width="6" height="11" rx="3" />
+              <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+              <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+            </svg>
+          </button>
+          {lowerRight.map((value, index) => renderTextKey(value, `kbd-lower-right-${index}`))}
+          <button
+            type="button"
+            className="key key-action key-action-delete"
+            onClick={removeLastLetter}
+            disabled={isGameOver}
+            aria-label="Delete"
+            title="Delete"
+          >
+            <img src="/delete.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       
@@ -494,8 +629,6 @@ function App() {
                 className={`length-button ${wordLength === 4 ? 'active' : ''}`}
                 onClick={() => {
                   setWordLength(4)
-                  setInputMode('vowels')
-                  setActiveConsonant('')
                   startNewGame(4)
                 }}
                 disabled={isGameOver}
@@ -507,8 +640,6 @@ function App() {
                 className={`length-button ${wordLength === 5 ? 'active' : ''}`}
                 onClick={() => {
                   setWordLength(5)
-                  setInputMode('vowels')
-                  setActiveConsonant('')
                   startNewGame(5)
                 }}
                 disabled={isGameOver}
@@ -589,178 +720,19 @@ function App() {
         </section>
 
         <section className="input-panel" aria-label="Tamil letter input">
-          {inputMode === 'vowels' && (
-            <div className="panel">
-              <div className="panel-content">
-                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('vowels')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'vowels'}
-                  >
-                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('consonants')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'consonants'}
-                  >
-                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
-                  </button>
-                  {!isAppleMobile && (
-                    <button
-                      type="button"
-                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
-                      onClick={toggleListening}
-                      disabled={isGameOver || !isSpeechSupported}
-                      aria-pressed={isListening}
-                    >
-                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                <div className="key-grid">
-                  {VOWELS.map((vowel) => (
-                    <button
-                      key={vowel.letter}
-                      type="button"
-                      className="key"
-                      onClick={() => appendLetter(vowel.letter)}
-                      disabled={isGameOver}
-                    >
-                      {vowel.letter}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <div className="panel">
+            <div className="panel-content">
+              {renderTamilKeyboard()}
             </div>
-          )}
+          </div>
 
-          {inputMode === 'consonants' && (
-            <div className="panel">
-              <div className="panel-content">
-                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('vowels')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'vowels'}
-                  >
-                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('consonants')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'consonants'}
-                  >
-                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
-                  </button>
-                  {!isAppleMobile && (
-                    <button
-                      type="button"
-                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
-                      onClick={toggleListening}
-                      disabled={isGameOver || !isSpeechSupported}
-                      aria-pressed={isListening}
-                    >
-                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                {showSyllables ? (
-                  <>
-                    <div className="key-grid">
-                      <button
-                        type="button"
-                        className="key"
-                        onClick={() => appendLetter(pureConsonant)}
-                        disabled={isGameOver}
-                      >
-                        {pureConsonant}
-                      </button>
-                      {syllables.map((syllable) => (
-                        <button
-                          key={syllable}
-                          type="button"
-                          className="key"
-                          onClick={() => appendLetter(syllable)}
-                          disabled={isGameOver}
-                        >
-                          {syllable}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className="back-button"
-                        onClick={() => setActiveConsonant('')}
-                        disabled={isGameOver}
-                      >
-                        Back
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="key-grid consonants">
-                    {CONSONANTS.map((consonant) => (
-                      <button
-                        key={consonant}
-                        type="button"
-                        className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                        onClick={() => setActiveConsonant(consonant)}
-                        disabled={isGameOver}
-                      >
-                        {consonant}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <form className="controls" onSubmit={submitGuess}>
+          <div className="controls">
             <div className="buttons">
-              <button type="button" className="action-delete" onClick={removeLastLetter} disabled={isGameOver}>
-                Delete
-              </button>
-              <button type="button" className="action-clear" onClick={clearGuess} disabled={isGameOver}>
-                Clear
-              </button>
-              <button type="submit" className="action-enter" disabled={isGameOver}>
-                Enter
-              </button>
               <button type="button" onClick={() => startNewGame()}>
                 New Game
               </button>
             </div>
-          </form>
+          </div>
         </section>
       </div>
 
@@ -856,3 +828,6 @@ function App() {
 }
 
 export default App
+
+
+
