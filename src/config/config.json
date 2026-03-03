@@ -1,0 +1,13 @@
+{
+  "default_file_name": "common_words_4_5.json",
+  "categories": [
+    {
+      "category_name": "Commonly Used Words",
+      "file_name": "common_words_4_5.json"
+    },
+    {
+      "category_name": "Epic Names",
+      "file_name": "epic_names_4_5.json"
+    }
+  ]
+}

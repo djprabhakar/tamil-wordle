@@ -16,3 +16,20 @@ Note: This will impact Vite dev & build performances.
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Runtime Categories From CDN
+
+The app can load category configuration and category word JSON files from CDN at runtime.
+
+1. Copy `.env.example` to `.env`.
+2. Set:
+   - `VITE_CATEGORY_CONFIG_URL` (URL to remote `config.json`)
+   - `VITE_CATEGORY_DATA_BASE_URL` (base URL for category files; optional)
+3. Deploy. If CDN is unavailable, the app falls back to local config/data in `src/config` and `src/data`.
+
+`config.json` format:
+- `default_file_name`: string
+- `categories`: array of `{ "category_name": "...", "file_name": "..." }`
+
+Each category file should be a JSON array with entries containing:
+- `word` or `tamil-word`

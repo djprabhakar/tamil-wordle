@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './App.css'
+import categoryConfig from './config/config.json'
 
 const DEFAULT_WORD_LENGTH = 5
 const MAX_GUESSES = 6
@@ -21,84 +22,30 @@ const VOWELS = [
 ]
 
 const CONSONANTS = [
+  'க்ஷ',
   'க', 'ங', 'ச', 'ஞ', 'ட', 'ண',
   'த', 'ந', 'ப', 'ம', 'ய', 'ர',
   'ல', 'வ', 'ழ', 'ள', 'ற', 'ன',
+  'ஜ', 'ஷ', 'ஸ', 'ஹ',
 ]
 
-const RAW_WORDS_5 = [
-  'மரங்கள்',
-  'பாடல்கள்',
-  'சூழல்கள்',
-  'பம்பரம்',
-  'கம்பளம்',
-  'ஏலக்காய்',
-  'ஆசிரியர்',
-  'புத்தகம்',
-  'உள்ளங்கை',
-  'சந்தனம்',  
-  'பாரதியார்',
-  'தமிழகம்',
-  'விநாயகர்',
-  'ஆலமரம்',
-  'சர்க்கரை',
-  'மேம்பாலம்'
-]
-
-const RAW_WORDS_4 = [
-  'பட்டம்',
-  'உலகம்',
-  'தேங்காய்',
-  'தங்கம்',
-  'மாங்காய்',
-  'செங்கல்',
-  'வெல்லம்',
-  'குரங்கு',
-  'முறுக்கு',
-  'மிட்டாய்',
-  'புதையல்',
-  'ஔடதம்',
-  'இளநீர்',
-  'பேருந்து',
-  'வெண்ணெய்',
-  'கற்றாழை',
-  'குழந்தை',
-  'அன்னம்',
-  'எறும்பு',
-  'கிண்ணம்',
-  'மூங்கில்',
-  'ஊஞ்சல்',
-  'பௌர்ணமி',
-  'கப்பல்',
-  'கப்பல்',
-  'எண்ணெய்',
-  'அன்னாசி',
-  'பட்டாணி',
-  'இந்தியா',
-  'சிலந்தி',
-  'பொங்கல்',
-  'வானூர்தி',
-  'பருந்து',
-  'வானவில்',
-  'சிங்கம்',
-  'பப்பாளி',
-  'கண்ணாடி',
-  'இரண்டு',
-  'தக்காளி',
-  'இதயம்',
-  'சூரியன்',
-  'வளையல்',
-  'வட்டம்',
-  'தொலைபேசி',
-  'கங்காரு',
-  'கட்டில்',
-  'கரும்பு',
-  'ஐம்பது',
-  'மஞ்சள்',
-  'நீச்சல்'
-]
+const CONSONANTS_BY_LENGTH = [...CONSONANTS].sort((a, b) => b.length - a.length)
 
 const FALLBACK_WORD = 'மரங்கள்'
+const DEFAULT_CATEGORY_FILE = 'common_words_4_5.json'
+const EMPTY_WORDS_BY_LENGTH = { 4: [], 5: [] }
+const REMOTE_CATEGORY_CONFIG_URL = (import.meta.env.VITE_CATEGORY_CONFIG_URL || '').trim()
+const REMOTE_CATEGORY_DATA_BASE_URL = (import.meta.env.VITE_CATEGORY_DATA_BASE_URL || '').trim()
+
+const CATEGORY_DATA_MODULES = import.meta.glob('./data/*.json', { eager: true })
+const LOCAL_CATEGORY_OPTIONS = Array.isArray(categoryConfig?.categories)
+  ? categoryConfig.categories
+    .map((item) => ({
+      category_name: String(item?.category_name || '').trim(),
+      file_name: String(item?.file_name || '').trim(),
+    }))
+    .filter((item) => item.category_name && item.file_name)
+  : []
 
 const splitGraphemes = (value) => {
   if (typeof Intl !== 'undefined' && Intl.Segmenter) {
@@ -107,16 +54,58 @@ const splitGraphemes = (value) => {
   return Array.from(value)
 }
 
-const getWordsForLength = (length) => {
-  if (length === 4) return RAW_WORDS_4
-  if (length === 5) return RAW_WORDS_5
-  return []
+const extractTamilWord = (entry) => {
+  if (typeof entry === 'string') return entry.trim()
+  if (entry && typeof entry === 'object') {
+    const value = entry.word ?? entry['tamil-word']
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  return ''
 }
 
-const pickRandomWord = (length) => {
-  const list = getWordsForLength(length)
+const buildWordsByLengthFromEntries = (rawEntries) => {
+  const wordsByLength = { 4: [], 5: [] }
+  const seen = new Set()
+
+  rawEntries.forEach((entry) => {
+    const word = extractTamilWord(entry)
+    if (!word || seen.has(word)) return
+    const length = splitGraphemes(word).length
+    if (length === 4 || length === 5) {
+      wordsByLength[length].push(word)
+      seen.add(word)
+    }
+  })
+
+  return wordsByLength
+}
+
+const buildWordsByLengthFromFile = (fileName) => {
+  const moduleEntry = CATEGORY_DATA_MODULES[`./data/${fileName}`]
+  const rawEntries = Array.isArray(moduleEntry?.default) ? moduleEntry.default : []
+  return buildWordsByLengthFromEntries(rawEntries)
+}
+
+const LOCAL_WORDS_BY_CATEGORY_FILE = LOCAL_CATEGORY_OPTIONS.reduce((acc, category) => {
+  acc[category.file_name] = buildWordsByLengthFromFile(category.file_name)
+  return acc
+}, {})
+
+const LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE = (() => {
+  const requested = String(categoryConfig?.default_file_name || DEFAULT_CATEGORY_FILE).trim()
+  if (LOCAL_WORDS_BY_CATEGORY_FILE[requested]) return requested
+  if (LOCAL_WORDS_BY_CATEGORY_FILE[DEFAULT_CATEGORY_FILE]) return DEFAULT_CATEGORY_FILE
+  return LOCAL_CATEGORY_OPTIONS[0]?.file_name || DEFAULT_CATEGORY_FILE
+})()
+
+const getWordsForLength = (length, wordsByLength = EMPTY_WORDS_BY_LENGTH) => (
+  (wordsByLength[length] || []).filter((word) => splitGraphemes(word).length === length)
+)
+
+const pickRandomWord = (length, wordsByLength = EMPTY_WORDS_BY_LENGTH) => {
+  const list = getWordsForLength(length, wordsByLength)
   if (list.length === 0) {
-    const fallback = getWordsForLength(DEFAULT_WORD_LENGTH)[0] || FALLBACK_WORD
+    const fallback = getWordsForLength(DEFAULT_WORD_LENGTH, wordsByLength)[0] || FALLBACK_WORD
     return fallback
   }
   return list[Math.floor(Math.random() * list.length)]
@@ -128,7 +117,7 @@ const VOWEL_SIGN_MAP = VOWELS.reduce((acc, vowel) => {
 }, {})
 
 const getBaseConsonant = (letter) => {
-  const match = CONSONANTS.find((consonant) => letter.startsWith(consonant))
+  const match = CONSONANTS_BY_LENGTH.find((consonant) => letter.startsWith(consonant))
   return match || ''
 }
 
@@ -211,6 +200,15 @@ const evaluateGuess = (guess, solution) => {
     result[guessIndex].status = 'absent'
   })
 
+  // Third pass: for half-present/absent, mark whether vowel at this position matches.
+  result.forEach((entry, index) => {
+    if (entry.status !== 'half-present' && entry.status !== 'absent') return
+    const guessVowel = guessParts[index]?.vowel
+    const solutionVowel = solutionParts[index]?.vowel
+    if (!guessVowel || !solutionVowel) return
+    entry.vowelStatus = guessVowel === solutionVowel ? 'vowel-correct' : 'vowel-wrong'
+  })
+
   return result
 }
 
@@ -220,7 +218,12 @@ const buildSyllables = (consonant) => (
 
 function App() {
   const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
-  const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH))
+  const [categoryOptions, setCategoryOptions] = useState(LOCAL_CATEGORY_OPTIONS)
+  const [wordsByCategoryFile, setWordsByCategoryFile] = useState(LOCAL_WORDS_BY_CATEGORY_FILE)
+  const [selectedCategoryFile, setSelectedCategoryFile] = useState(LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE)
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false)
+  const initialWordsByLength = LOCAL_WORDS_BY_CATEGORY_FILE[LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE] || EMPTY_WORDS_BY_LENGTH
+  const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH, initialWordsByLength))
   const [guesses, setGuesses] = useState([])
   const [currentGuess, setCurrentGuess] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
@@ -233,6 +236,8 @@ function App() {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false)
   const [isAppleMobile, setIsAppleMobile] = useState(false)
   const recognitionRef = useRef(null)
+  const selectedWordsByLength = wordsByCategoryFile[selectedCategoryFile] || EMPTY_WORDS_BY_LENGTH
+  const selectedCategoryName = categoryOptions.find((item) => item.file_name === selectedCategoryFile)?.category_name || 'Commonly Used Words'
 
   const appendLetter = (letter) => {
     if (isGameOver) return
@@ -284,14 +289,14 @@ function App() {
     }
   }
 
-  const startNewGame = (nextLength = wordLength) => {
+  const startNewGame = (nextLength = wordLength, wordsSource = selectedWordsByLength) => {
     const length = typeof nextLength === 'number' ? nextLength : wordLength
-    const list = getWordsForLength(length)
+    const list = getWordsForLength(length, wordsSource)
     if (list.length === 0) {
       setStatusMessage(`No ${length} letter words configured.`)
       return
     }
-    setSolution(pickRandomWord(length))
+    setSolution(pickRandomWord(length, wordsSource))
     setGuesses([])
     setCurrentGuess('')
     setStatusMessage('')
@@ -315,6 +320,74 @@ function App() {
   })
 
   const showSyllables = inputMode === 'consonants' && activeConsonant
+
+  useEffect(() => {
+    const loadRemoteCategories = async () => {
+      if (!REMOTE_CATEGORY_CONFIG_URL) return
+
+      try {
+        const response = await fetch(REMOTE_CATEGORY_CONFIG_URL, { cache: 'no-store' })
+        if (!response.ok) return
+        const remoteConfig = await response.json()
+        const remoteCategories = Array.isArray(remoteConfig?.categories)
+          ? remoteConfig.categories
+            .map((item) => ({
+              category_name: String(item?.category_name || '').trim(),
+              file_name: String(item?.file_name || '').trim(),
+            }))
+            .filter((item) => item.category_name && item.file_name)
+          : []
+
+        if (remoteCategories.length === 0) return
+
+        const resolveDataUrl = (fileName) => {
+          if (/^https?:\/\//i.test(fileName)) return fileName
+          if (REMOTE_CATEGORY_DATA_BASE_URL) return new URL(fileName, REMOTE_CATEGORY_DATA_BASE_URL).href
+          return new URL(fileName, REMOTE_CATEGORY_CONFIG_URL).href
+        }
+
+        const pairs = await Promise.all(
+          remoteCategories.map(async (category) => {
+            try {
+              const dataResponse = await fetch(resolveDataUrl(category.file_name), { cache: 'no-store' })
+              if (!dataResponse.ok) return [category.file_name, EMPTY_WORDS_BY_LENGTH]
+              const rawEntries = await dataResponse.json()
+              const wordsByLength = buildWordsByLengthFromEntries(Array.isArray(rawEntries) ? rawEntries : [])
+              return [category.file_name, wordsByLength]
+            } catch (error) {
+              return [category.file_name, EMPTY_WORDS_BY_LENGTH]
+            }
+          }),
+        )
+
+        const remoteWordsByCategoryFile = Object.fromEntries(pairs)
+        setCategoryOptions(remoteCategories)
+        setWordsByCategoryFile(remoteWordsByCategoryFile)
+
+        const requestedDefault = String(remoteConfig?.default_file_name || DEFAULT_CATEGORY_FILE).trim()
+        const resolvedDefault = remoteWordsByCategoryFile[requestedDefault]
+          ? requestedDefault
+          : (remoteWordsByCategoryFile[DEFAULT_CATEGORY_FILE]
+            ? DEFAULT_CATEGORY_FILE
+            : remoteCategories[0].file_name)
+
+        const nextWords = remoteWordsByCategoryFile[resolvedDefault] || EMPTY_WORDS_BY_LENGTH
+        setSelectedCategoryFile(resolvedDefault)
+        setSolution(pickRandomWord(wordLength, nextWords))
+        setGuesses([])
+        setCurrentGuess('')
+        setStatusMessage('')
+        setIsWin(false)
+        setIsGameOver(false)
+        setInputMode('vowels')
+        setActiveConsonant('')
+      } catch (error) {
+        // Keep local fallback config/data when remote config fetch fails.
+      }
+    }
+
+    loadRemoteCategories()
+  }, [])
 
   useEffect(() => {
     const ua = navigator.userAgent || ''
@@ -397,10 +470,20 @@ function App() {
                 5 Letters
               </button>
             </div>
+            <button
+              type="button"
+              className="category-picker-button icon-only"
+              onClick={() => setIsCategoryOpen(true)}
+              aria-label="Choose category"
+              title="Choose category"
+            >
+              <img src="/category-picker.svg" alt="" aria-hidden="true" />
+            </button>
             <button type="button" className="help-button" onClick={() => setIsHelpOpen(true)}>
               விதிகள்
             </button>
           </div>
+          <p className="category-summary">Category: {selectedCategoryName}</p>
         </section>
 
         <section
@@ -418,12 +501,13 @@ function App() {
                 {Array.from({ length: wordLength }).map((__, colIndex) => {
                   const letter = letters[colIndex] || ''
                   const status = evaluation ? evaluation[colIndex]?.status : letter ? 'filled' : 'empty'
+                  const vowelStatus = evaluation ? evaluation[colIndex]?.vowelStatus || '' : ''
 
                   return (
                     <div
                       key={`tile-${rowIndex}-${colIndex}`}
                       role="gridcell"
-                      className={`tile ${status}`}
+                      className={`tile ${status} ${vowelStatus}`}
                     >
                       {letter}
                     </div>
@@ -654,6 +738,44 @@ function App() {
                 <span className="mini-tile absent" aria-hidden="true" />
                 <span>சாம்பல் — அந்த மெய்யெழுத்து சொல்லில் இல்லை.</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCategoryOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsCategoryOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose category"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>Choose Category</h2>
+              <button type="button" className="modal-close" onClick={() => setIsCategoryOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="category-list">
+              {categoryOptions.map((category) => (
+                <button
+                  key={category.file_name}
+                  type="button"
+                  className={`category-option ${selectedCategoryFile === category.file_name ? 'active' : ''}`}
+                  onClick={() => {
+                    const nextWords = wordsByCategoryFile[category.file_name] || EMPTY_WORDS_BY_LENGTH
+                    setSelectedCategoryFile(category.file_name)
+                    setIsCategoryOpen(false)
+                    setInputMode('vowels')
+                    setActiveConsonant('')
+                    startNewGame(wordLength, nextWords)
+                  }}
+                >
+                  {category.category_name}
+                </button>
+              ))}
             </div>
           </div>
         </div>
