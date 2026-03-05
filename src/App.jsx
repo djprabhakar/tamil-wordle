@@ -65,6 +65,7 @@ const extractTamilWord = (entry) => {
 
 const buildWordsByLengthFromEntries = (rawEntries) => {
   const wordsByLength = { 4: [], 5: [] }
+  const detailsByWord = {}
   const seen = new Set()
 
   rawEntries.forEach((entry) => {
@@ -73,11 +74,19 @@ const buildWordsByLengthFromEntries = (rawEntries) => {
     const length = splitGraphemes(word).length
     if (length === 4 || length === 5) {
       wordsByLength[length].push(word)
+      detailsByWord[word] = {
+        english_word: entry && typeof entry === 'object' && typeof entry.english_word === 'string'
+          ? entry.english_word.trim()
+          : '',
+        about: entry && typeof entry === 'object' && typeof entry.about === 'string'
+          ? entry.about.trim()
+          : '',
+      }
       seen.add(word)
     }
   })
 
-  return wordsByLength
+  return { wordsByLength, detailsByWord }
 }
 
 const buildWordsByLengthFromFile = (fileName) => {
@@ -86,10 +95,18 @@ const buildWordsByLengthFromFile = (fileName) => {
   return buildWordsByLengthFromEntries(rawEntries)
 }
 
-const LOCAL_WORDS_BY_CATEGORY_FILE = LOCAL_CATEGORY_OPTIONS.reduce((acc, category) => {
+const LOCAL_CATEGORY_DATA_BY_FILE = LOCAL_CATEGORY_OPTIONS.reduce((acc, category) => {
   acc[category.file_name] = buildWordsByLengthFromFile(category.file_name)
   return acc
 }, {})
+
+const LOCAL_WORDS_BY_CATEGORY_FILE = Object.fromEntries(
+  Object.entries(LOCAL_CATEGORY_DATA_BY_FILE).map(([fileName, data]) => [fileName, data.wordsByLength]),
+)
+
+const LOCAL_DETAILS_BY_CATEGORY_FILE = Object.fromEntries(
+  Object.entries(LOCAL_CATEGORY_DATA_BY_FILE).map(([fileName, data]) => [fileName, data.detailsByWord]),
+)
 
 const LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE = (() => {
   const requested = String(categoryConfig?.default_file_name || DEFAULT_CATEGORY_FILE).trim()
@@ -220,8 +237,10 @@ function App() {
   const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
   const [categoryOptions, setCategoryOptions] = useState(LOCAL_CATEGORY_OPTIONS)
   const [wordsByCategoryFile, setWordsByCategoryFile] = useState(LOCAL_WORDS_BY_CATEGORY_FILE)
+  const [detailsByCategoryFile, setDetailsByCategoryFile] = useState(LOCAL_DETAILS_BY_CATEGORY_FILE)
   const [selectedCategoryFile, setSelectedCategoryFile] = useState(LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE)
   const [isCategoryOpen, setIsCategoryOpen] = useState(false)
+  const [isResultOpen, setIsResultOpen] = useState(false)
   const initialWordsByLength = LOCAL_WORDS_BY_CATEGORY_FILE[LOCAL_RESOLVED_DEFAULT_CATEGORY_FILE] || EMPTY_WORDS_BY_LENGTH
   const [solution, setSolution] = useState(() => pickRandomWord(DEFAULT_WORD_LENGTH, initialWordsByLength))
   const [guesses, setGuesses] = useState([])
@@ -237,7 +256,9 @@ function App() {
   const [isAppleMobile, setIsAppleMobile] = useState(false)
   const recognitionRef = useRef(null)
   const selectedWordsByLength = wordsByCategoryFile[selectedCategoryFile] || EMPTY_WORDS_BY_LENGTH
+  const selectedDetailsByWord = detailsByCategoryFile[selectedCategoryFile] || {}
   const selectedCategoryName = categoryOptions.find((item) => item.file_name === selectedCategoryFile)?.category_name || 'Commonly Used Words'
+  const solutionDetails = selectedDetailsByWord[solution] || { english_word: '', about: '' }
 
   const appendLetter = (letter) => {
     if (isGameOver) return
@@ -277,12 +298,14 @@ function App() {
     if (currentGuess === solution) {
       setIsWin(true)
       setIsGameOver(true)
+      setIsResultOpen(true)
       setStatusMessage('சிறப்பு! சரியாக கண்டுபிடித்தீர்கள்.')
       return
     }
 
     if (nextGuesses.length >= MAX_GUESSES) {
       setIsGameOver(true)
+      setIsResultOpen(true)
       setStatusMessage(`முடிந்தது. சரியான சொல்: ${solution}`)
     } else {
       setStatusMessage('')
@@ -302,6 +325,7 @@ function App() {
     setStatusMessage('')
     setIsWin(false)
     setIsGameOver(false)
+    setIsResultOpen(false)
     setActiveConsonant('')
   }
 
@@ -350,19 +374,28 @@ function App() {
           remoteCategories.map(async (category) => {
             try {
               const dataResponse = await fetch(resolveDataUrl(category.file_name), { cache: 'no-store' })
-              if (!dataResponse.ok) return [category.file_name, EMPTY_WORDS_BY_LENGTH]
+              if (!dataResponse.ok) {
+                return [category.file_name, { wordsByLength: EMPTY_WORDS_BY_LENGTH, detailsByWord: {} }]
+              }
               const rawEntries = await dataResponse.json()
-              const wordsByLength = buildWordsByLengthFromEntries(Array.isArray(rawEntries) ? rawEntries : [])
-              return [category.file_name, wordsByLength]
+              const categoryData = buildWordsByLengthFromEntries(Array.isArray(rawEntries) ? rawEntries : [])
+              return [category.file_name, categoryData]
             } catch (error) {
-              return [category.file_name, EMPTY_WORDS_BY_LENGTH]
+              return [category.file_name, { wordsByLength: EMPTY_WORDS_BY_LENGTH, detailsByWord: {} }]
             }
           }),
         )
 
-        const remoteWordsByCategoryFile = Object.fromEntries(pairs)
+        const remoteCategoryDataByFile = Object.fromEntries(pairs)
+        const remoteWordsByCategoryFile = Object.fromEntries(
+          Object.entries(remoteCategoryDataByFile).map(([fileName, data]) => [fileName, data.wordsByLength]),
+        )
+        const remoteDetailsByCategoryFile = Object.fromEntries(
+          Object.entries(remoteCategoryDataByFile).map(([fileName, data]) => [fileName, data.detailsByWord]),
+        )
         setCategoryOptions(remoteCategories)
         setWordsByCategoryFile(remoteWordsByCategoryFile)
+        setDetailsByCategoryFile(remoteDetailsByCategoryFile)
 
         const requestedDefault = String(remoteConfig?.default_file_name || DEFAULT_CATEGORY_FILE).trim()
         const resolvedDefault = remoteWordsByCategoryFile[requestedDefault]
@@ -379,6 +412,7 @@ function App() {
         setStatusMessage('')
         setIsWin(false)
         setIsGameOver(false)
+        setIsResultOpen(false)
         setInputMode('vowels')
         setActiveConsonant('')
       } catch (error) {
@@ -697,6 +731,28 @@ function App() {
       <div className={`status ${isWin ? 'win' : ''}`} aria-live="polite">
         {statusMessage}
       </div>
+
+      {isResultOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsResultOpen(false)}>
+          <div
+            className="modal result-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Game result"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>{isWin ? 'வெற்றி' : 'முடிவு'}</h2>
+              <button type="button" className="modal-close" onClick={() => setIsResultOpen(false)}>
+                ×
+              </button>
+            </div>
+            <p className="modal-text"><strong>சொல்:</strong> {solution}</p>
+            <p className="modal-text"><strong>English:</strong> {solutionDetails.english_word || '-'}</p>
+            <p className="modal-text"><strong>About:</strong> {solutionDetails.about || '-'}</p>
+          </div>
+        </div>
+      )}
 
       {isHelpOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsHelpOpen(false)}>
