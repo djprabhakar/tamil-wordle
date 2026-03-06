@@ -21,14 +21,18 @@ const VOWELS = [
   { letter: 'ஔ', sign: 'ௌ' },
 ]
 
-const CONSONANTS = [
+const GRANTHA_CONSONANTS = [
   'க்ஷ',
-  'க', 'ங', 'ச', 'ஞ', 'ட', 'ண',
-  'த', 'ந', 'ப', 'ம', 'ய', 'ர',
-  'ல', 'வ', 'ழ', 'ள', 'ற', 'ன',
   'ஜ', 'ஷ', 'ஸ', 'ஹ',
 ]
 
+const CORE_CONSONANTS = [
+  'க', 'ங', 'ச', 'ஞ', 'ட', 'ண',
+  'த', 'ந', 'ப', 'ம', 'ய', 'ர',
+  'ல', 'வ', 'ழ', 'ள', 'ற', 'ன',
+]
+
+const CONSONANTS = [...CORE_CONSONANTS, ...GRANTHA_CONSONANTS]
 const CONSONANTS_BY_LENGTH = [...CONSONANTS].sort((a, b) => b.length - a.length)
 
 const FALLBACK_WORD = 'மரங்கள்'
@@ -249,6 +253,7 @@ function App() {
   const [isWin, setIsWin] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
   const [activeConsonant, setActiveConsonant] = useState('')
+  const [showGrantha, setShowGrantha] = useState(false)
   const [inputMode, setInputMode] = useState('vowels')
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isListening, setIsListening] = useState(false)
@@ -280,7 +285,7 @@ function App() {
   }
 
   const submitGuess = (event) => {
-    event.preventDefault()
+    if (event) event.preventDefault()
     if (isGameOver) return
 
     const letters = splitGraphemes(currentGuess)
@@ -327,6 +332,7 @@ function App() {
     setIsGameOver(false)
     setIsResultOpen(false)
     setActiveConsonant('')
+    setShowGrantha(false)
   }
 
   const syllables = activeConsonant ? buildSyllables(activeConsonant) : []
@@ -415,6 +421,7 @@ function App() {
         setIsResultOpen(false)
         setInputMode('vowels')
         setActiveConsonant('')
+        setShowGrantha(false)
       } catch (error) {
         // Keep local fallback config/data when remote config fetch fails.
       }
@@ -446,6 +453,7 @@ function App() {
       setStatusMessage('')
       setInputMode('vowels')
       setActiveConsonant('')
+      setShowGrantha(false)
     }
     recognition.onerror = () => {
       setStatusMessage('குரல் உள்ளீடு கிடைக்கவில்லை. மீண்டும் முயற்சிக்கவும்.')
@@ -484,6 +492,7 @@ function App() {
                   setWordLength(4)
                   setInputMode('vowels')
                   setActiveConsonant('')
+                  setShowGrantha(false)
                   startNewGame(4)
                 }}
                 disabled={isGameOver}
@@ -497,6 +506,7 @@ function App() {
                   setWordLength(5)
                   setInputMode('vowels')
                   setActiveConsonant('')
+                  setShowGrantha(false)
                   startNewGame(5)
                 }}
                 disabled={isGameOver}
@@ -553,113 +563,91 @@ function App() {
         </section>
 
         <section className="input-panel" aria-label="Tamil letter input">
-          {inputMode === 'vowels' && (
-            <div className="panel">
-              <div className="panel-content">
-                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('vowels')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'vowels'}
-                  >
-                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('consonants')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'consonants'}
-                  >
-                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
-                  </button>
-                  {!isAppleMobile && (
-                    <button
-                      type="button"
-                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
-                      onClick={toggleListening}
-                      disabled={isGameOver || !isSpeechSupported}
-                      aria-pressed={isListening}
-                    >
-                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                <div className="key-grid">
-                  {VOWELS.map((vowel) => (
-                    <button
-                      key={vowel.letter}
-                      type="button"
-                      className="key"
-                      onClick={() => appendLetter(vowel.letter)}
-                      disabled={isGameOver}
-                    >
-                      {vowel.letter}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {inputMode === 'consonants' && (
-            <div className="panel">
-              <div className="panel-content">
-                <div className="input-toggle" role="tablist" aria-label="Letter input mode">
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'vowels' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('vowels')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'vowels'}
-                  >
-                    {'\u0B85 \u0B86..\u0B93 \u0B94'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`toggle-button ${inputMode === 'consonants' ? 'active' : ''}`}
-                    onClick={() => {
-                      setInputMode('consonants')
-                      setActiveConsonant('')
-                    }}
-                    disabled={isGameOver}
-                    aria-pressed={inputMode === 'consonants'}
-                  >
-                    {'\u0B95 \u0B99..\u0BB1 \u0BA9'}
-                  </button>
-                  {!isAppleMobile && (
-                    <button
-                      type="button"
-                      className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${!isSpeechSupported ? 'disabled' : ''}`}
-                      onClick={toggleListening}
-                      disabled={isGameOver || !isSpeechSupported}
-                      aria-pressed={isListening}
-                    >
-                      <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                        <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                        <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-                {showSyllables ? (
-                  <>
+          <div className="panel">
+            <div className="panel-content">
+              <div className="keyboard-layout">
+                <div className="keyboard-main">
+                  {inputMode === 'vowels' ? (
+                    <div className="vowel-layout">
+                      <div className="vowel-row">
+                        {VOWELS.slice(0, 5).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={isGameOver}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="vowel-row">
+                        {VOWELS.slice(5, 10).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={isGameOver}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="vowel-row vowel-row-third">
+                        <span className="vowel-spacer" aria-hidden="true" />
+                        {VOWELS.slice(10, 12).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={isGameOver}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                        <span className="vowel-spacer" aria-hidden="true" />
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="vowel-row vowel-row-fourth">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon mode-switch-consonants"
+                          onClick={() => {
+                            setInputMode('consonants')
+                            setActiveConsonant('')
+                            setShowGrantha(false)
+                          }}
+                          disabled={isGameOver}
+                          aria-label="Show consonants"
+                        >
+                          {'\u0B95 \u0B99 \u0B9A'}
+                        </button>
+                        <span className="vowel-center-slot">
+                          <button
+                            type="button"
+                            className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                            onClick={toggleListening}
+                            disabled={isGameOver || !isSpeechSupported || isAppleMobile}
+                            aria-pressed={isListening}
+                          >
+                            <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                              <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                              <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </span>
+                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : showSyllables ? (
                     <div className="key-grid">
                       <button
                         type="button"
@@ -689,36 +677,129 @@ function App() {
                         Back
                       </button>
                     </div>
-                  </>
-                ) : (
-                  <div className="key-grid consonants">
-                    {CONSONANTS.map((consonant) => (
-                      <button
-                        key={consonant}
-                        type="button"
-                        className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                        onClick={() => setActiveConsonant(consonant)}
-                        disabled={isGameOver}
-                      >
-                        {consonant}
-                      </button>
-                    ))}
+                  ) : (
+                    <div className="consonant-layout">
+                      <div className="consonant-row consonant-row-6">
+                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(0, 6).map((consonant) => (
+                          <button
+                            key={`cons-r1-${consonant}`}
+                            type="button"
+                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                            onClick={() => setActiveConsonant(consonant)}
+                            disabled={isGameOver}
+                          >
+                            {consonant}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="consonant-row consonant-row-6">
+                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(6, 12).map((consonant) => (
+                          <button
+                            key={`cons-r2-${consonant}`}
+                            type="button"
+                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                            onClick={() => setActiveConsonant(consonant)}
+                            disabled={isGameOver}
+                          >
+                            {consonant}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="consonant-row consonant-row-6">
+                        <button
+                          type="button"
+                          className="key key-icon-action grantha-toggle"
+                          onClick={() => setShowGrantha((value) => !value)}
+                          disabled={isGameOver}
+                          aria-label={showGrantha ? 'Show Tamil consonants' : 'Show Grantha consonants'}
+                          title={showGrantha ? 'Tamil' : 'Grantha'}
+                        >
+                          <img src="/sanskrit.png" alt="" aria-hidden="true" />
+                        </button>
+                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(12, 16).map((consonant) => (
+                          <button
+                            key={`cons-r3-${consonant}`}
+                            type="button"
+                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                            onClick={() => setActiveConsonant(consonant)}
+                            disabled={isGameOver}
+                          >
+                            {consonant}
+                          </button>
+                        ))}
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <div className="consonant-row consonant-row-5">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon"
+                          onClick={() => {
+                            setInputMode('vowels')
+                            setActiveConsonant('')
+                            setShowGrantha(false)
+                          }}
+                          disabled={isGameOver}
+                          aria-label="Show vowels"
+                          title="Vowels"
+                        >
+                          {'\u0B85 \u0B86 \u0B87'}
+                        </button>
+                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(16, 18).map((consonant) => (
+                          <button
+                            key={`cons-r4-${consonant}`}
+                            type="button"
+                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                            onClick={() => setActiveConsonant(consonant)}
+                            disabled={isGameOver}
+                          >
+                            {consonant}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                          onClick={toggleListening}
+                          disabled={isGameOver || !isSpeechSupported || isAppleMobile}
+                          aria-pressed={isListening}
+                        >
+                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+                {inputMode !== 'vowels' && showSyllables && (
+                  <div className="keyboard-side-actions">
+                    <button type="button" className="key key-side-action key-icon-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
+                      <img src="/delete.png" alt="" aria-hidden="true" />
+                    </button>
+                    <button type="button" className="key key-side-action key-enter-side key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
+                      <img src="/enter.png" alt="" aria-hidden="true" />
+                    </button>
                   </div>
                 )}
               </div>
             </div>
-          )}
+          </div>
 
           <form className="controls" onSubmit={submitGuess}>
             <div className="buttons">
-              <button type="button" className="action-delete" onClick={removeLastLetter} disabled={isGameOver}>
-                Delete
-              </button>
               <button type="button" className="action-clear" onClick={clearGuess} disabled={isGameOver}>
                 Clear
-              </button>
-              <button type="submit" className="action-enter" disabled={isGameOver}>
-                Enter
               </button>
               <button type="button" onClick={() => startNewGame()}>
                 New Game

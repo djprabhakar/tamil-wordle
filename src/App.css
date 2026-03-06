@@ -357,6 +357,179 @@
   grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
 }
 
+.keyboard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.keyboard-main {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.vowel-layout {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.consonant-layout {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.vowel-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.consonant-row {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.consonant-row-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.consonant-row-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+}
+
+.consonant-row-5 .mode-switch-vowel-left {
+  min-width: 0;
+  width: 100%;
+  justify-self: stretch;
+  padding: 0.32rem 0.2rem;
+  font-size: 0.62rem;
+}
+
+.consonant-row-5 .toggle-button.toggle-mic {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+}
+
+.vowel-spacer {
+  visibility: hidden;
+}
+
+.vowel-row-fourth {
+  align-items: center;
+}
+
+.vowel-center-slot {
+  display: grid;
+  place-items: center;
+  grid-column: 3;
+}
+
+.key-enter-inline {
+  grid-column: 5;
+  justify-self: stretch;
+  display: grid;
+  place-items: center;
+}
+
+.key-icon-action img {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+}
+
+.key-icon-action[aria-label="Delete"] {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.key-icon-action[aria-label="Delete"] img {
+  width: 90%;
+  height: 90%;
+}
+
+.delete-action {
+  width: 52px;
+  height: 52px;
+  justify-self: stretch;
+}
+
+
+.grantha-toggle {
+  border-radius: 12px;
+  padding: 0.35rem 0.25rem;
+  background: #1e1b16;
+  color: #fffaf0;
+}
+
+.grantha-toggle img {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+}
+
+.mode-switch-vowel-icon {
+  grid-column: 1;
+  min-width: 3.8rem;
+  height: 2.35rem;
+  border-radius: 8px;
+  padding: 0.25rem 0.4rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  justify-self: start;
+}
+
+.mode-switch-consonants {
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  white-space: normal;
+  min-width: 2.8rem;
+  width: 2.8rem;
+}
+
+.keyboard-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mode-switch {
+  min-width: 7.5rem;
+}
+
+.keyboard-side-actions {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 0.55rem;
+  width: 52px;
+}
+
+.key-side-action {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.35rem 0.25rem;
+  font-size: 0.82rem;
+  display: grid;
+  place-items: center;
+}
+
+.key-enter-side img {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+}
+
 .key {
   border: none;
   border-radius: 12px;
@@ -632,6 +805,20 @@
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .keyboard-layout {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mode-switch {
+    min-width: 6.2rem;
+  }
+
+  .key-side-action {
+    font-size: 0.75rem;
   }
 }
 
