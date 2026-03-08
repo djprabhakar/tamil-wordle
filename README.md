@@ -67,6 +67,6 @@ Use the separate backend project `tamil-wordle-live-api`.
 2. Run frontend in this repo:
    - `npm run dev`
 3. Set frontend env in `.env`:
-   - `VITE_LIVE_GAMES_URL=/live-games`
+   - `VITE_LIVE_GAMES_URL=https://enasollu.enasollu.xyz/live-games`
 
-`/live-games` is proxied by Vite to `http://localhost:4000` in `vite.config.js`, so local dev works with the HTTPS Vite server.
+For local API development, you can still use `VITE_LIVE_GAMES_URL=/live-games` and run the backend at `http://localhost:4000` via Vite proxy.
