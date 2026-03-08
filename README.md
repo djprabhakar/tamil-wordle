@@ -59,24 +59,14 @@ When `VITE_LIVE_GAMES_URL` is not set, multiplayer works only within the same br
 
 ## Local Multiplayer Backend (Express)
 
-This repo now includes a minimal backend at [`server/index.js`](./server/index.js).
+Use the separate backend project `tamil-wordle-live-api`.
 
-1. Run backend:
-   - `npm run dev:server`
-2. Run frontend:
-   - `npm run dev:client`
+1. Run backend in that repo:
+   - `npm install`
+   - `npm run dev`
+2. Run frontend in this repo:
+   - `npm run dev`
 3. Set frontend env in `.env`:
    - `VITE_LIVE_GAMES_URL=/live-games`
 
 `/live-games` is proxied by Vite to `http://localhost:4000` in `vite.config.js`, so local dev works with the HTTPS Vite server.
-
-Backend endpoints:
-- `GET /live-games` -> returns array of live games.
-- `POST /live-games` -> creates/updates one live game and returns it.
-- `GET /health` -> simple health check.
-
-Backend env vars:
-- `PORT` (default: `4000`)
-- `HOST` (default: `0.0.0.0`)
-- `MAX_LIVE_GAMES` (default: `200`)
-- `ALLOWED_ORIGINS` (comma-separated; optional)
