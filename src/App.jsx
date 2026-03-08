@@ -175,6 +175,16 @@ const createLiveGameOnRemote = async (game) => {
   return normalizeLiveGames([payload])[0] || game
 }
 
+const reportLiveParticipationOnRemote = async (gameId, playerId, outcome) => {
+  if (!REMOTE_LIVE_GAMES_URL) return
+  if (!gameId || !playerId) return
+  await fetch(`${REMOTE_LIVE_GAMES_URL}/${encodeURIComponent(gameId)}/participation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, outcome }),
+  })
+}
+
 const buildWordsByLengthFromEntries = (rawEntries) => {
   const wordsByLength = { 4: [], 5: [] }
   const detailsByWord = {}
@@ -443,6 +453,13 @@ function App() {
     setActiveLiveGameHost('')
   }
 
+  const reportLiveParticipation = (outcome) => {
+    if (!activeLiveGameId) return
+    reportLiveParticipationOnRemote(activeLiveGameId, playerId, outcome).catch(() => {
+      // Ignore reporting failures; gameplay should continue.
+    })
+  }
+
   const joinLiveGame = (game) => {
     resetBoardForSolution(game.word, game.wordLength)
     setActiveLiveGameId(game.id)
@@ -527,6 +544,7 @@ function App() {
     setActiveConsonant('')
 
     if (currentGuess === solution) {
+      reportLiveParticipation('success')
       setIsWin(true)
       setIsGameOver(true)
       setIsResultOpen(true)
@@ -535,6 +553,7 @@ function App() {
     }
 
     if (nextGuesses.length >= MAX_GUESSES) {
+      reportLiveParticipation('failure')
       setIsGameOver(true)
       setIsResultOpen(true)
       setStatusMessage(`முடிந்தது. சரியான சொல்: ${solution}`)
