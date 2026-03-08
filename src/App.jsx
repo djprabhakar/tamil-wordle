@@ -5,6 +5,8 @@ import categoryConfig from './config/config.json'
 const DEFAULT_WORD_LENGTH = 5
 const MAX_GUESSES = 6
 const PULLI = '்'
+const PLAYER_ID_STORAGE_KEY = 'tamil_wordle_player_id'
+const PLAYER_NICKNAME_STORAGE_KEY = 'tamil_wordle_player_nickname'
 
 const VOWELS = [
   { letter: 'அ', sign: '' },
@@ -66,6 +68,46 @@ const extractTamilWord = (entry) => {
   }
   return ''
 }
+
+const createAnonymousPlayerId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `anon-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const getOrCreateAnonymousPlayerId = () => {
+  try {
+    const existing = localStorage.getItem(PLAYER_ID_STORAGE_KEY)
+    if (existing) return existing
+    const nextId = createAnonymousPlayerId()
+    localStorage.setItem(PLAYER_ID_STORAGE_KEY, nextId)
+    return nextId
+  } catch (error) {
+    // If storage is blocked, still return a session identifier.
+    return createAnonymousPlayerId()
+  }
+}
+
+const normalizeNickname = (value) => String(value || '').trim().slice(0, 24)
+
+const getStoredNickname = () => {
+  try {
+    return normalizeNickname(localStorage.getItem(PLAYER_NICKNAME_STORAGE_KEY))
+  } catch (error) {
+    return ''
+  }
+}
+
+const setStoredNickname = (value) => {
+  try {
+    localStorage.setItem(PLAYER_NICKNAME_STORAGE_KEY, value)
+  } catch (error) {
+    // Ignore storage errors and keep in-memory nickname.
+  }
+}
+
+const buildFallbackNickname = (playerId) => `Player-${String(playerId || '').slice(0, 6) || 'guest'}`
 
 const buildWordsByLengthFromEntries = (rawEntries) => {
   const wordsByLength = { 4: [], 5: [] }
@@ -238,6 +280,8 @@ const buildSyllables = (consonant) => (
 )
 
 function App() {
+  const [playerId] = useState(() => getOrCreateAnonymousPlayerId())
+  const [nickname, setNickname] = useState(() => getStoredNickname())
   const [wordLength, setWordLength] = useState(DEFAULT_WORD_LENGTH)
   const [categoryOptions, setCategoryOptions] = useState(LOCAL_CATEGORY_OPTIONS)
   const [wordsByCategoryFile, setWordsByCategoryFile] = useState(LOCAL_WORDS_BY_CATEGORY_FILE)
@@ -256,6 +300,7 @@ function App() {
   const [showGrantha, setShowGrantha] = useState(false)
   const [inputMode, setInputMode] = useState('vowels')
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const [helpLanguage, setHelpLanguage] = useState('ta')
   const [isListening, setIsListening] = useState(false)
   const [isSpeechSupported, setIsSpeechSupported] = useState(false)
   const [isAppleMobile, setIsAppleMobile] = useState(false)
@@ -264,6 +309,22 @@ function App() {
   const selectedDetailsByWord = detailsByCategoryFile[selectedCategoryFile] || {}
   const selectedCategoryName = categoryOptions.find((item) => item.file_name === selectedCategoryFile)?.category_name || 'Commonly Used Words'
   const solutionDetails = selectedDetailsByWord[solution] || { english_word: '', about: '' }
+  const nicknameShort = splitGraphemes(nickname).slice(0, 2).join('')
+  const consonantSource = showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS
+  const row1Consonants = consonantSource.slice(0, 6)
+  const row2Consonants = consonantSource.slice(6, 12)
+  const row3Consonants = consonantSource.slice(12, 16)
+  const row4Consonants = consonantSource.slice(16, 18)
+
+  const chooseNickname = () => {
+    const entered = window.prompt('Choose your nickname', nickname)
+    if (entered === null) return false
+    const nextNickname = normalizeNickname(entered)
+    if (!nextNickname) return false
+    setNickname(nextNickname)
+    setStoredNickname(nextNickname)
+    return true
+  }
 
   const appendLetter = (letter) => {
     if (isGameOver) return
@@ -335,8 +396,16 @@ function App() {
     setShowGrantha(false)
   }
 
+  const acknowledgeResult = () => {
+    startNewGame(wordLength, selectedWordsByLength)
+  }
+
   const syllables = activeConsonant ? buildSyllables(activeConsonant) : []
   const pureConsonant = activeConsonant ? `${activeConsonant}${PULLI}` : ''
+  const syllableKeys = activeConsonant ? [pureConsonant, ...syllables] : []
+  const syllableRow1 = syllableKeys.slice(0, 5)
+  const syllableRow2 = syllableKeys.slice(5, 10)
+  const syllableRow3 = syllableKeys.slice(10, 13)
   const solutionBases = new Set(splitGraphemes(solution).map((letter) => parseLetter(letter).base).filter(Boolean))
   const wrongConsonants = new Set()
 
@@ -350,6 +419,15 @@ function App() {
   })
 
   const showSyllables = inputMode === 'consonants' && activeConsonant
+
+  useEffect(() => {
+    if (nickname) return
+    const chosen = chooseNickname()
+    if (chosen) return
+    const fallback = buildFallbackNickname(playerId)
+    setNickname(fallback)
+    setStoredNickname(fallback)
+  }, [nickname, playerId])
 
   useEffect(() => {
     const loadRemoteCategories = async () => {
@@ -478,7 +556,7 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-player-id={playerId} data-player-nickname={nickname}>
       
 
       <div className="layout">
@@ -523,8 +601,24 @@ function App() {
             >
               <img src="/category-picker.svg" alt="" aria-hidden="true" />
             </button>
-            <button type="button" className="help-button" onClick={() => setIsHelpOpen(true)}>
-              விதிகள்
+            <button
+              type="button"
+              className="help-button"
+              onClick={() => {
+                setHelpLanguage('ta')
+                setIsHelpOpen(true)
+              }}
+            >
+              ?
+            </button>
+            <button
+              type="button"
+              className="nickname-button"
+              onClick={chooseNickname}
+              aria-label="Edit nickname"
+              title={nickname}
+            >
+              {nicknameShort}
             </button>
           </div>
           <p className="category-summary">Category: {selectedCategoryName}</p>
@@ -648,63 +742,143 @@ function App() {
                       </div>
                     </div>
                   ) : showSyllables ? (
-                    <div className="key-grid">
-                      <button
-                        type="button"
-                        className="key"
-                        onClick={() => appendLetter(pureConsonant)}
-                        disabled={isGameOver}
-                      >
-                        {pureConsonant}
-                      </button>
-                      {syllables.map((syllable) => (
+                    <div className="syllable-layout">
+                      <div className="syllable-row syllable-row-5">
+                        {Array.from({ length: 5 }).map((_, index) => {
+                          const syllable = syllableRow1[index]
+                          if (!syllable) return <span key={`syll-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r1-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={isGameOver}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="syllable-row syllable-row-5">
+                        {Array.from({ length: 5 }).map((_, index) => {
+                          const syllable = syllableRow2[index]
+                          if (!syllable) return <span key={`syll-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r2-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={isGameOver}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="syllable-row syllable-row-5">
                         <button
-                          key={syllable}
                           type="button"
-                          className="key"
-                          onClick={() => appendLetter(syllable)}
+                          className="key key-icon-action grantha-toggle"
+                          onClick={() => {
+                            setActiveConsonant('')
+                            setInputMode('consonants')
+                          }}
                           disabled={isGameOver}
+                          aria-label="Back to consonants"
+                          title="Back"
                         >
-                          {syllable}
+                          <img src="/back.png" alt="" aria-hidden="true" />
                         </button>
-                      ))}
-                      <button
-                        type="button"
-                        className="back-button"
-                        onClick={() => setActiveConsonant('')}
-                        disabled={isGameOver}
-                      >
-                        Back
-                      </button>
+                        {Array.from({ length: 3 }).map((_, index) => {
+                          const syllable = syllableRow3[index]
+                          if (!syllable) return <span key={`syll-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r3-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={isGameOver}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="syllable-row syllable-row-bottom">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon"
+                          onClick={() => {
+                            setActiveConsonant('')
+                            setInputMode('vowels')
+                            setShowGrantha(false)
+                          }}
+                          disabled={isGameOver}
+                          aria-label="Show vowels"
+                          title="Vowels"
+                        >
+                          {'\u0B85 \u0B86 \u0B87'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                          onClick={toggleListening}
+                          disabled={isGameOver || !isSpeechSupported || isAppleMobile}
+                          aria-pressed={isListening}
+                        >
+                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                        <button type="button" className="key key-icon-action syllable-enter" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="consonant-layout">
                       <div className="consonant-row consonant-row-6">
-                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(0, 6).map((consonant) => (
-                          <button
-                            key={`cons-r1-${consonant}`}
-                            type="button"
-                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                            onClick={() => setActiveConsonant(consonant)}
-                            disabled={isGameOver}
-                          >
-                            {consonant}
-                          </button>
-                        ))}
+                        {Array.from({ length: 6 }).map((_, index) => {
+                          const consonant = row1Consonants[index]
+                          if (!consonant) return <span key={`cons-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r1-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={isGameOver}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
                       </div>
 
                       <div className="consonant-row consonant-row-6">
-                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(6, 12).map((consonant) => (
-                          <button
-                            key={`cons-r2-${consonant}`}
-                            type="button"
-                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                            onClick={() => setActiveConsonant(consonant)}
-                            disabled={isGameOver}
-                          >
-                            {consonant}
-                          </button>
-                        ))}
+                        {Array.from({ length: 6 }).map((_, index) => {
+                          const consonant = row2Consonants[index]
+                          if (!consonant) return <span key={`cons-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r2-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={isGameOver}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
                       </div>
 
                       <div className="consonant-row consonant-row-6">
@@ -716,19 +890,27 @@ function App() {
                           aria-label={showGrantha ? 'Show Tamil consonants' : 'Show Grantha consonants'}
                           title={showGrantha ? 'Tamil' : 'Grantha'}
                         >
-                          <img src="/sanskrit.png" alt="" aria-hidden="true" />
+                          <img
+                            src={showGrantha ? '/consonant.png' : '/sanskrit.png'}
+                            alt=""
+                            aria-hidden="true"
+                          />
                         </button>
-                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(12, 16).map((consonant) => (
-                          <button
-                            key={`cons-r3-${consonant}`}
-                            type="button"
-                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                            onClick={() => setActiveConsonant(consonant)}
-                            disabled={isGameOver}
-                          >
-                            {consonant}
-                          </button>
-                        ))}
+                        {Array.from({ length: 4 }).map((_, index) => {
+                          const consonant = row3Consonants[index]
+                          if (!consonant) return <span key={`cons-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r3-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={isGameOver}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
                         <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
                           <img src="/delete.png" alt="" aria-hidden="true" />
                         </button>
@@ -749,17 +931,21 @@ function App() {
                         >
                           {'\u0B85 \u0B86 \u0B87'}
                         </button>
-                        {(showGrantha ? GRANTHA_CONSONANTS : CORE_CONSONANTS).slice(16, 18).map((consonant) => (
-                          <button
-                            key={`cons-r4-${consonant}`}
-                            type="button"
-                            className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                            onClick={() => setActiveConsonant(consonant)}
-                            disabled={isGameOver}
-                          >
-                            {consonant}
-                          </button>
-                        ))}
+                        {Array.from({ length: 2 }).map((_, index) => {
+                          const consonant = row4Consonants[index]
+                          if (!consonant) return <span key={`cons-r4-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r4-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={isGameOver}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
                         <button
                           type="button"
                           className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
@@ -782,30 +968,10 @@ function App() {
 
                 </div>
 
-                {inputMode !== 'vowels' && showSyllables && (
-                  <div className="keyboard-side-actions">
-                    <button type="button" className="key key-side-action key-icon-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
-                      <img src="/delete.png" alt="" aria-hidden="true" />
-                    </button>
-                    <button type="button" className="key key-side-action key-enter-side key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
-                      <img src="/enter.png" alt="" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>
 
-          <form className="controls" onSubmit={submitGuess}>
-            <div className="buttons">
-              <button type="button" className="action-clear" onClick={clearGuess} disabled={isGameOver}>
-                Clear
-              </button>
-              <button type="button" onClick={() => startNewGame()}>
-                New Game
-              </button>
-            </div>
-          </form>
         </section>
       </div>
 
@@ -814,7 +980,7 @@ function App() {
       </div>
 
       {isResultOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsResultOpen(false)}>
+        <div className="modal-backdrop" role="presentation" onClick={acknowledgeResult}>
           <div
             className="modal result-modal"
             role="dialog"
@@ -824,13 +990,16 @@ function App() {
           >
             <div className="modal-header">
               <h2>{isWin ? 'வெற்றி' : 'முடிவு'}</h2>
-              <button type="button" className="modal-close" onClick={() => setIsResultOpen(false)}>
+              <button type="button" className="modal-close" onClick={acknowledgeResult}>
                 ×
               </button>
             </div>
             <p className="modal-text"><strong>சொல்:</strong> {solution}</p>
             <p className="modal-text"><strong>English:</strong> {solutionDetails.english_word || '-'}</p>
             <p className="modal-text"><strong>About:</strong> {solutionDetails.about || '-'}</p>
+            <button type="button" className="result-ok-button" onClick={acknowledgeResult}>
+              OK
+            </button>
           </div>
         </div>
       )}
@@ -845,11 +1014,20 @@ function App() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="modal-header">
-              <h2>விளையாட்டு வழிமுறை</h2>
+              <h2>{helpLanguage === 'ta' ? '\u0bb5\u0bbf\u0bb3\u0bc8\u0baf\u0bbe\u0b9f\u0bcd\u0b9f\u0bc1 \u0bb5\u0bb4\u0bbf\u0bae\u0bc1\u0bb1\u0bc8' : 'How To Play'}</h2>
+              <button
+                type="button"
+                className="help-lang-toggle"
+                onClick={() => setHelpLanguage((lang) => (lang === 'ta' ? 'en' : 'ta'))}
+              >
+                {helpLanguage === 'ta' ? 'EN' : '\u0ba4\u0bae\u0bbf\u0bb4\u0bcd'}
+              </button>
               <button type="button" className="modal-close" onClick={() => setIsHelpOpen(false)}>
-                ×
+                ?
               </button>
             </div>
+            {helpLanguage === 'ta' ? (
+              <>
             <p className="modal-text">
               நீங்கள் தேர்ந்தெடுத்த முறைக்கு ஏற்ப 4 அல்லது 5 எழுத்துகள் கொண்ட ஒரு சொல்லை உள்ளிடுங்கள்.
             </p>
@@ -875,7 +1053,57 @@ function App() {
                 <span className="mini-tile absent" aria-hidden="true" />
                 <span>சாம்பல் — அந்த மெய்யெழுத்து சொல்லில் இல்லை.</span>
               </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present vowel-correct" aria-hidden="true" />
+                <span>Green border: vowel at this position is correct (for half-present/absent).</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present vowel-wrong" aria-hidden="true" />
+                <span>Red border: vowel at this position is wrong (for half-present/absent).</span>
+              </div>
+
             </div>
+            <p className="modal-text">Duplicate matching is locked, so each solution syllable can be matched only once.</p>
+              </>
+            ) : (
+              <>
+            <p className="modal-text">
+              Enter a Tamil word with {wordLength} letters and submit your guess.
+            </p>
+            <p className="modal-text">What each color means:</p>
+            <div className="rule-list">
+              <div className="rule-item">
+                <span className="mini-tile correct" aria-hidden="true" />
+                <span>Full green: exact syllable in the exact position.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile present" aria-hidden="true" />
+                <span>Full orange: syllable exists in the word, but in a different position.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-correct" aria-hidden="true" />
+                <span>Half green: base consonant matches in the same position, vowel/sign is different.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present" aria-hidden="true" />
+                <span>Half orange: base consonant exists in the word, but position and/or vowel/sign differs.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile absent" aria-hidden="true" />
+                <span>Gray: that base consonant is not available in the remaining unmatched solution letters.</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present vowel-correct" aria-hidden="true" />
+                <span>Green border: vowel at this position is correct (for half-present/absent).</span>
+              </div>
+              <div className="rule-item">
+                <span className="mini-tile half-present vowel-wrong" aria-hidden="true" />
+                <span>Red border: vowel at this position is wrong (for half-present/absent).</span>
+              </div>
+            </div>
+            <p className="modal-text">Duplicate matching is locked, so each solution syllable can be matched only once.</p>
+              </>
+            )}
           </div>
         </div>
       )}
