@@ -25,6 +25,7 @@ The app can load category configuration and category word JSON files from CDN at
 2. Set:
    - `VITE_CATEGORY_CONFIG_URL` (URL to remote `config.json`)
    - `VITE_CATEGORY_DATA_BASE_URL` (base URL for category files; optional)
+   - `VITE_LIVE_GAMES_URL` (optional shared multiplayer endpoint)
 3. Deploy. If CDN is unavailable, the app falls back to local config/data in `src/config` and `src/data`.
 
 `config.json` format:
@@ -33,3 +34,49 @@ The app can load category configuration and category word JSON files from CDN at
 
 Each category file should be a JSON array with entries containing:
 - `word` or `tamil-word`
+
+## Live Games API (Optional)
+
+If `VITE_LIVE_GAMES_URL` is set, multiplayer lobbies are shared across users.
+
+- `GET {VITE_LIVE_GAMES_URL}`: returns an array of games.
+- `POST {VITE_LIVE_GAMES_URL}`: accepts one game object and returns the saved game.
+
+Game object shape:
+
+```json
+{
+  "id": "GABC1234",
+  "word": "தமிழ்",
+  "wordLength": 5,
+  "hostPlayerId": "player-id",
+  "hostNickname": "Player name",
+  "createdAt": 1741380000000
+}
+```
+
+When `VITE_LIVE_GAMES_URL` is not set, multiplayer works only within the same browser profile via `localStorage`.
+
+## Local Multiplayer Backend (Express)
+
+This repo now includes a minimal backend at [`server/index.js`](./server/index.js).
+
+1. Run backend:
+   - `npm run dev:server`
+2. Run frontend:
+   - `npm run dev:client`
+3. Set frontend env in `.env`:
+   - `VITE_LIVE_GAMES_URL=/live-games`
+
+`/live-games` is proxied by Vite to `http://localhost:4000` in `vite.config.js`, so local dev works with the HTTPS Vite server.
+
+Backend endpoints:
+- `GET /live-games` -> returns array of live games.
+- `POST /live-games` -> creates/updates one live game and returns it.
+- `GET /health` -> simple health check.
+
+Backend env vars:
+- `PORT` (default: `4000`)
+- `HOST` (default: `0.0.0.0`)
+- `MAX_LIVE_GAMES` (default: `200`)
+- `ALLOWED_ORIGINS` (comma-separated; optional)

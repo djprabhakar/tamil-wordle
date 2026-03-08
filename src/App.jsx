@@ -7,6 +7,9 @@ const MAX_GUESSES = 6
 const PULLI = '்'
 const PLAYER_ID_STORAGE_KEY = 'tamil_wordle_player_id'
 const PLAYER_NICKNAME_STORAGE_KEY = 'tamil_wordle_player_nickname'
+const LIVE_GAMES_STORAGE_KEY = 'tamil_wordle_live_games_v1'
+const REMOTE_LIVE_GAMES_URL = (import.meta.env.VITE_LIVE_GAMES_URL || '').trim()
+const LIVE_GAMES_POLL_INTERVAL_MS = 8000
 
 const VOWELS = [
   { letter: 'அ', sign: '' },
@@ -108,6 +111,69 @@ const setStoredNickname = (value) => {
 }
 
 const buildFallbackNickname = (playerId) => `Player-${String(playerId || '').slice(0, 6) || 'guest'}`
+const createLiveGameId = () => `G${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
+const normalizeWordInput = (value) => String(value || '').trim()
+const normalizeLiveGames = (games) => (
+  (Array.isArray(games) ? games : [])
+    .map((game) => ({
+      id: String(game?.id || '').trim(),
+      word: normalizeWordInput(game?.word),
+      wordLength: Number(game?.wordLength),
+      hostPlayerId: String(game?.hostPlayerId || '').trim(),
+      hostNickname: normalizeNickname(game?.hostNickname),
+      createdAt: Number(game?.createdAt) || Date.now(),
+    }))
+    .filter((game) => (
+      game.id
+      && (game.wordLength === 4 || game.wordLength === 5)
+      && splitGraphemes(game.word).length === game.wordLength
+      && game.hostNickname
+    ))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 100)
+)
+
+const readLiveGamesFromStorage = () => {
+  try {
+    const raw = localStorage.getItem(LIVE_GAMES_STORAGE_KEY)
+    if (!raw) return []
+    return normalizeLiveGames(JSON.parse(raw))
+  } catch (error) {
+    return []
+  }
+}
+
+const writeLiveGamesToStorage = (games) => {
+  try {
+    localStorage.setItem(LIVE_GAMES_STORAGE_KEY, JSON.stringify(games))
+  } catch (error) {
+    // Ignore storage write errors and keep local state.
+  }
+}
+
+const fetchLiveGamesFromRemote = async () => {
+  if (!REMOTE_LIVE_GAMES_URL) return null
+  const response = await fetch(REMOTE_LIVE_GAMES_URL, { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error(`Unable to load live games (${response.status})`)
+  }
+  const payload = await response.json()
+  return normalizeLiveGames(payload)
+}
+
+const createLiveGameOnRemote = async (game) => {
+  if (!REMOTE_LIVE_GAMES_URL) return null
+  const response = await fetch(REMOTE_LIVE_GAMES_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(game),
+  })
+  if (!response.ok) {
+    throw new Error(`Unable to create live game (${response.status})`)
+  }
+  const payload = await response.json()
+  return normalizeLiveGames([payload])[0] || game
+}
 
 const buildWordsByLengthFromEntries = (rawEntries) => {
   const wordsByLength = { 4: [], 5: [] }
@@ -299,11 +365,18 @@ function App() {
   const [activeConsonant, setActiveConsonant] = useState('')
   const [showGrantha, setShowGrantha] = useState(false)
   const [inputMode, setInputMode] = useState('vowels')
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [helpLanguage, setHelpLanguage] = useState('ta')
   const [isListening, setIsListening] = useState(false)
   const [isSpeechSupported, setIsSpeechSupported] = useState(false)
   const [isAppleMobile, setIsAppleMobile] = useState(false)
+  const [hostWordLength, setHostWordLength] = useState(DEFAULT_WORD_LENGTH)
+  const [hostWordInput, setHostWordInput] = useState('')
+  const [liveGames, setLiveGames] = useState(() => readLiveGamesFromStorage())
+  const [isLiveGamesLoading, setIsLiveGamesLoading] = useState(false)
+  const [activeLiveGameId, setActiveLiveGameId] = useState('')
+  const [activeLiveGameHost, setActiveLiveGameHost] = useState('')
   const recognitionRef = useRef(null)
   const selectedWordsByLength = wordsByCategoryFile[selectedCategoryFile] || EMPTY_WORDS_BY_LENGTH
   const selectedDetailsByWord = detailsByCategoryFile[selectedCategoryFile] || {}
@@ -324,6 +397,98 @@ function App() {
     setNickname(nextNickname)
     setStoredNickname(nextNickname)
     return true
+  }
+
+  const resetBoardForSolution = (nextSolution, nextLength) => {
+    setSolution(nextSolution)
+    setWordLength(nextLength)
+    setGuesses([])
+    setCurrentGuess('')
+    setStatusMessage('')
+    setIsWin(false)
+    setIsGameOver(false)
+    setIsResultOpen(false)
+    setInputMode('vowels')
+    setActiveConsonant('')
+    setShowGrantha(false)
+  }
+
+  const syncLiveGames = (games) => {
+    const normalized = normalizeLiveGames(games)
+    setLiveGames(normalized)
+    writeLiveGamesToStorage(normalized)
+  }
+
+  const loadLiveGames = async () => {
+    if (!REMOTE_LIVE_GAMES_URL) {
+      setLiveGames(readLiveGamesFromStorage())
+      return
+    }
+    try {
+      setIsLiveGamesLoading(true)
+      const remoteGames = await fetchLiveGamesFromRemote()
+      if (remoteGames) {
+        syncLiveGames(remoteGames)
+      }
+    } catch (error) {
+      setStatusMessage('Unable to load online live games. Showing cached list.')
+      setLiveGames(readLiveGamesFromStorage())
+    } finally {
+      setIsLiveGamesLoading(false)
+    }
+  }
+
+  const leaveLiveGame = () => {
+    setActiveLiveGameId('')
+    setActiveLiveGameHost('')
+  }
+
+  const joinLiveGame = (game) => {
+    resetBoardForSolution(game.word, game.wordLength)
+    setActiveLiveGameId(game.id)
+    setActiveLiveGameHost(game.hostNickname)
+    setIsLiveModalOpen(false)
+    setStatusMessage(`Joined game ${game.id} by ${game.hostNickname}`)
+  }
+
+  const createLiveGame = async () => {
+    const hostWord = normalizeWordInput(hostWordInput)
+    const expectedLength = hostWordLength
+    if (splitGraphemes(hostWord).length !== expectedLength) {
+      setStatusMessage(`Host word must be exactly ${expectedLength} letters.`)
+      return
+    }
+
+    const confirmation = window.confirm(`Start a live ${expectedLength}-letter game now?`)
+    if (!confirmation) return
+
+    const hostNickname = nickname || buildFallbackNickname(playerId)
+    let newGame = {
+      id: createLiveGameId(),
+      word: hostWord,
+      wordLength: expectedLength,
+      hostPlayerId: playerId,
+      hostNickname,
+      createdAt: Date.now(),
+    }
+
+    try {
+      if (REMOTE_LIVE_GAMES_URL) {
+        const remoteGame = await createLiveGameOnRemote(newGame)
+        if (remoteGame) {
+          newGame = remoteGame
+        }
+      }
+      const nextGames = [newGame, ...liveGames.filter((item) => item.id !== newGame.id)].slice(0, 100)
+      syncLiveGames(nextGames)
+    } catch (error) {
+      setStatusMessage('Unable to publish live game right now.')
+      return
+    }
+
+    setHostWordInput('')
+    joinLiveGame(newGame)
+    setStatusMessage(`Game ${newGame.id} is live.`)
   }
 
   const appendLetter = (letter) => {
@@ -394,9 +559,13 @@ function App() {
     setIsResultOpen(false)
     setActiveConsonant('')
     setShowGrantha(false)
+    leaveLiveGame()
   }
 
   const acknowledgeResult = () => {
+    if (activeLiveGameId) {
+      leaveLiveGame()
+    }
     startNewGame(wordLength, selectedWordsByLength)
   }
 
@@ -428,6 +597,45 @@ function App() {
     setNickname(fallback)
     setStoredNickname(fallback)
   }, [nickname, playerId])
+
+  useEffect(() => {
+    if (REMOTE_LIVE_GAMES_URL) return undefined
+    const onStorageChange = (event) => {
+      if (event.key !== LIVE_GAMES_STORAGE_KEY) return
+      setLiveGames(readLiveGamesFromStorage())
+    }
+    window.addEventListener('storage', onStorageChange)
+    return () => window.removeEventListener('storage', onStorageChange)
+  }, [])
+
+  useEffect(() => {
+    if (!REMOTE_LIVE_GAMES_URL) return undefined
+    let mounted = true
+
+    const refresh = async () => {
+      try {
+        const remoteGames = await fetchLiveGamesFromRemote()
+        if (mounted && remoteGames) {
+          syncLiveGames(remoteGames)
+        }
+      } catch (error) {
+        if (mounted) {
+          setLiveGames(readLiveGamesFromStorage())
+        }
+      }
+    }
+
+    setIsLiveGamesLoading(true)
+    refresh().finally(() => {
+      if (mounted) setIsLiveGamesLoading(false)
+    })
+    const intervalId = window.setInterval(refresh, LIVE_GAMES_POLL_INTERVAL_MS)
+
+    return () => {
+      mounted = false
+      window.clearInterval(intervalId)
+    }
+  }, [])
 
   useEffect(() => {
     const loadRemoteCategories = async () => {
@@ -562,44 +770,31 @@ function App() {
       <div className="layout">
         <section className="top-controls" aria-label="Game options">
           <div className="top-row">
-            <div className="length-toggle" role="group" aria-label="Word length">
-              <button
-                type="button"
-                className={`length-button ${wordLength === 4 ? 'active' : ''}`}
-                onClick={() => {
-                  setWordLength(4)
+            <div className="game-type-select-wrap">
+              <select
+                className="game-type-select"
+                aria-label="Game type"
+                value={wordLength}
+                onChange={(event) => {
+                  const nextLength = Number(event.target.value)
+                  setWordLength(nextLength)
                   setInputMode('vowels')
                   setActiveConsonant('')
                   setShowGrantha(false)
-                  startNewGame(4)
+                  startNewGame(nextLength)
                 }}
-                disabled={isGameOver}
+                disabled={isGameOver || Boolean(activeLiveGameId)}
               >
-                4 Letters
-              </button>
-              <button
-                type="button"
-                className={`length-button ${wordLength === 5 ? 'active' : ''}`}
-                onClick={() => {
-                  setWordLength(5)
-                  setInputMode('vowels')
-                  setActiveConsonant('')
-                  setShowGrantha(false)
-                  startNewGame(5)
-                }}
-                disabled={isGameOver}
-              >
-                5 Letters
-              </button>
+                <option value={4}>4 Letters</option>
+                <option value={5}>5 Letters</option>
+              </select>
             </div>
             <button
               type="button"
-              className="category-picker-button icon-only"
-              onClick={() => setIsCategoryOpen(true)}
-              aria-label="Choose category"
-              title="Choose category"
+              className="live-button"
+              onClick={() => setIsLiveModalOpen(true)}
             >
-              <img src="/category-picker.svg" alt="" aria-hidden="true" />
+              Live
             </button>
             <button
               type="button"
@@ -978,6 +1173,110 @@ function App() {
       <div className={`status ${isWin ? 'win' : ''}`} aria-live="polite">
         {statusMessage}
       </div>
+
+      {isLiveModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsLiveModalOpen(false)}>
+          <div
+            className="modal live-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Live games"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>Live</h2>
+              <button type="button" className="modal-close" onClick={() => setIsLiveModalOpen(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className="live-modal-body">
+              <section className="live-modal-section" aria-label="Create a live game">
+                <h3>Create a live game</h3>
+                <div className="host-controls">
+                  <div className="host-length-toggle" role="group" aria-label="Host game length">
+                    <button
+                      type="button"
+                      className={`length-button ${hostWordLength === 4 ? 'active' : ''}`}
+                      onClick={() => setHostWordLength(4)}
+                    >
+                      4 Letters
+                    </button>
+                    <button
+                      type="button"
+                      className={`length-button ${hostWordLength === 5 ? 'active' : ''}`}
+                      onClick={() => setHostWordLength(5)}
+                    >
+                      5 Letters
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    className="host-word-input"
+                    value={hostWordInput}
+                    onChange={(event) => setHostWordInput(event.target.value)}
+                    placeholder={`Enter ${hostWordLength} letter word`}
+                    aria-label="Host word"
+                  />
+                  <button type="button" className="host-start-button" onClick={createLiveGame}>
+                    Start Live Game
+                  </button>
+                </div>
+              </section>
+
+              <section className="live-modal-section" aria-label="Participate in a live game">
+                <div className="multiplayer-header">
+                  <h3>Participate in a live game</h3>
+                  <button
+                    type="button"
+                    className="live-refresh-button"
+                    onClick={loadLiveGames}
+                    disabled={isLiveGamesLoading}
+                  >
+                    {isLiveGamesLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+                <p className="multiplayer-mode-note">
+                  Source: {REMOTE_LIVE_GAMES_URL ? 'Online shared lobby' : 'This browser only'}
+                </p>
+
+                {activeLiveGameId && (
+                  <div className="active-game-banner">
+                    <span>Playing live game: <strong>{activeLiveGameId}</strong> by {activeLiveGameHost}</span>
+                    <button type="button" onClick={() => startNewGame(wordLength, selectedWordsByLength)}>
+                      Leave
+                    </button>
+                  </div>
+                )}
+
+                <div className="live-games-list" role="list" aria-label="Live games">
+                  {liveGames.length === 0 ? (
+                    <p className="live-games-empty">No live games yet.</p>
+                  ) : (
+                    liveGames.map((game) => (
+                      <div className="live-game-item" role="listitem" key={game.id}>
+                        <div className="live-game-meta">
+                          <span className="game-id">{game.id}</span>
+                          <span>{game.wordLength} letters</span>
+                          <span>Host: {game.hostNickname}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="join-game-button"
+                          onClick={() => joinLiveGame(game)}
+                          disabled={activeLiveGameId === game.id}
+                        >
+                          {activeLiveGameId === game.id ? 'Playing' : 'Join'}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isResultOpen && (
         <div className="modal-backdrop" role="presentation" onClick={acknowledgeResult}>
