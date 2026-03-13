@@ -244,6 +244,39 @@
   cursor: pointer;
 }
 
+.host-games-toggle-button {
+  border: 1px solid var(--tile-border);
+  border-radius: 999px;
+  padding: 0.5rem 0.82rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  cursor: pointer;
+}
+
+.host-games-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.host-game-item {
+  border: 1px solid var(--tile-border);
+  border-radius: 0.7rem;
+  background: #fffbf3;
+  padding: 0.5rem 0.58rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.host-game-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--ink);
+}
+
 .active-game-banner {
   display: flex;
   justify-content: space-between;
@@ -346,6 +379,35 @@
   box-shadow: 0 20px 45px var(--shadow);
 }
 
+.live-board {
+  align-content: start;
+  height: auto;
+  overflow: visible;
+  gap: 0.8rem;
+}
+
+.live-host-row {
+  margin-top: 0.2rem;
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
+.live-host-row.length-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.live-board .row {
+  height: auto;
+}
+
+.live-board .tile {
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
 .row {
   display: grid;
   grid-template-columns: repeat(5, minmax(39px, 1fr));
@@ -357,7 +419,7 @@
 }
 
 .board.length-4 .tile {
-  aspect-ratio: auto;
+  aspect-ratio: 1 / 1;
   height: auto;
 }
 
@@ -707,7 +769,10 @@
 
 .key-enter-inline {
   grid-column: 5;
-  justify-self: stretch;
+  justify-self: end;
+  width: 52px;
+  min-width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
 }
@@ -727,6 +792,18 @@
 .key-icon-action[aria-label="Delete"] img {
   width: 95%;
   height: 95%;
+}
+
+.key-icon-action[aria-label="Enter"] {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.key-icon-action[aria-label="Enter"] img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
 }
 
 .delete-action {
@@ -778,6 +855,12 @@
 .input-panel .toggle-button {
   min-height: 52px;
   height: 52px;
+  font-weight: 400;
+}
+
+.input-panel .panel-title h2,
+.input-panel .panel-header h2 {
+  font-weight: 400;
 }
 
 .keyboard-bottom-row {
@@ -1166,10 +1249,22 @@
     overflow: visible;
   }
 
+  .board.live-board {
+    height: auto;
+    padding: 0.75rem;
+    gap: 0.75rem;
+    overflow: visible;
+  }
+
   .row {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0;
     height: calc(48dvh / 6);
+  }
+
+  .live-board .row {
+    gap: 0.45rem;
+    height: auto;
   }
 
   .tile {
@@ -1182,6 +1277,11 @@
     background-clip: content-box;
     border: 0;
     box-shadow: inset 0 0 0 2px var(--tile-border);
+  }
+
+  .live-board .tile {
+    aspect-ratio: 1 / 1;
+    height: auto;
   }
 
   .input-panel {

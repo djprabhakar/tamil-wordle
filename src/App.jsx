@@ -8,7 +8,9 @@ const PULLI = '்'
 const PLAYER_ID_STORAGE_KEY = 'tamil_wordle_player_id'
 const PLAYER_NICKNAME_STORAGE_KEY = 'tamil_wordle_player_nickname'
 const LIVE_GAMES_STORAGE_KEY = 'tamil_wordle_live_games_v1'
-const REMOTE_LIVE_GAMES_URL = (import.meta.env.VITE_LIVE_GAMES_URL || '').trim()
+const LIVE_PARTICIPATION_STORAGE_KEY = 'tamil_wordle_live_participation_v1'
+const DEFAULT_LIVE_GAMES_URL = 'https://enasollu.enasollu.xyz/live-games'
+const REMOTE_LIVE_GAMES_URL = (import.meta.env.VITE_LIVE_GAMES_URL || DEFAULT_LIVE_GAMES_URL).trim()
 const LIVE_GAMES_POLL_INTERVAL_MS = 8000
 
 const VOWELS = [
@@ -113,16 +115,100 @@ const setStoredNickname = (value) => {
 const buildFallbackNickname = (playerId) => `Player-${String(playerId || '').slice(0, 6) || 'guest'}`
 const createLiveGameId = () => `G${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
 const normalizeWordInput = (value) => String(value || '').trim()
+const toFiniteNumber = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+const pickMetricValue = (...values) => {
+  for (let index = 0; index < values.length; index += 1) {
+    const value = toFiniteNumber(values[index])
+    if (value !== null) return value
+  }
+  return 0
+}
+
+const normalizeLiveGameMetrics = (game) => {
+  const metrics = game && typeof game === 'object' ? (game.metrics || game.stats || {}) : {}
+  const participated = pickMetricValue(
+    game?.participantsCount,
+    game?.participantCount,
+    game?.participants,
+    game?.totalParticipants,
+    metrics?.participantsCount,
+    metrics?.participantCount,
+    metrics?.participants,
+    metrics?.totalParticipants,
+  )
+  const success = pickMetricValue(
+    game?.successCount,
+    game?.successfulCount,
+    game?.successful,
+    game?.successes,
+    metrics?.successCount,
+    metrics?.successfulCount,
+    metrics?.successful,
+    metrics?.successes,
+  )
+  const failure = pickMetricValue(
+    game?.failureCount,
+    game?.unsuccessfulCount,
+    game?.unsuccessful,
+    game?.failures,
+    metrics?.failureCount,
+    metrics?.unsuccessfulCount,
+    metrics?.unsuccessful,
+    metrics?.failures,
+  )
+  const hasRemoteMetrics = [
+    game?.participantsCount,
+    game?.participantCount,
+    game?.participants,
+    game?.totalParticipants,
+    game?.successCount,
+    game?.successfulCount,
+    game?.successful,
+    game?.successes,
+    game?.failureCount,
+    game?.unsuccessfulCount,
+    game?.unsuccessful,
+    game?.failures,
+    metrics?.participantsCount,
+    metrics?.participantCount,
+    metrics?.participants,
+    metrics?.totalParticipants,
+    metrics?.successCount,
+    metrics?.successfulCount,
+    metrics?.successful,
+    metrics?.successes,
+    metrics?.failureCount,
+    metrics?.unsuccessfulCount,
+    metrics?.unsuccessful,
+    metrics?.failures,
+  ].some((value) => toFiniteNumber(value) !== null)
+
+  return { participated, success, failure, hasRemoteMetrics }
+}
+
 const normalizeLiveGames = (games) => (
   (Array.isArray(games) ? games : [])
-    .map((game) => ({
-      id: String(game?.id || '').trim(),
-      word: normalizeWordInput(game?.word),
-      wordLength: Number(game?.wordLength),
-      hostPlayerId: String(game?.hostPlayerId || '').trim(),
-      hostNickname: normalizeNickname(game?.hostNickname),
-      createdAt: Number(game?.createdAt) || Date.now(),
-    }))
+    .map((game) => {
+      const metrics = normalizeLiveGameMetrics(game)
+      return {
+        id: String(game?.id || '').trim(),
+        word: normalizeWordInput(game?.word),
+        wordLength: Number(game?.wordLength),
+        hostPlayerId: String(game?.hostPlayerId || '').trim(),
+        hostNickname: normalizeNickname(game?.hostNickname),
+        createdAt: Number(game?.createdAt) || Date.now(),
+        metrics: {
+          participated: metrics.participated,
+          success: metrics.success,
+          failure: metrics.failure,
+        },
+        hasRemoteMetrics: metrics.hasRemoteMetrics,
+      }
+    })
     .filter((game) => (
       game.id
       && (game.wordLength === 4 || game.wordLength === 5)
@@ -146,6 +232,53 @@ const readLiveGamesFromStorage = () => {
 const writeLiveGamesToStorage = (games) => {
   try {
     localStorage.setItem(LIVE_GAMES_STORAGE_KEY, JSON.stringify(games))
+  } catch (error) {
+    // Ignore storage write errors and keep local state.
+  }
+}
+
+const normalizeOutcome = (value) => {
+  if (value === 'success') return 'success'
+  if (value === 'failure') return 'failure'
+  return ''
+}
+
+const normalizeParticipationByGame = (value) => {
+  if (!value || typeof value !== 'object') return {}
+  return Object.entries(value).reduce((acc, [playerKey, outcome]) => {
+    const key = String(playerKey || '').trim()
+    const normalizedOutcome = normalizeOutcome(outcome)
+    if (!key || !normalizedOutcome) return acc
+    acc[key] = normalizedOutcome
+    return acc
+  }, {})
+}
+
+const normalizeParticipationStats = (stats) => {
+  if (!stats || typeof stats !== 'object') return {}
+  return Object.entries(stats).reduce((acc, [gameId, value]) => {
+    const normalizedGameId = String(gameId || '').trim()
+    if (!normalizedGameId) return acc
+    const byPlayer = normalizeParticipationByGame(value)
+    if (Object.keys(byPlayer).length === 0) return acc
+    acc[normalizedGameId] = byPlayer
+    return acc
+  }, {})
+}
+
+const readLiveParticipationFromStorage = () => {
+  try {
+    const raw = localStorage.getItem(LIVE_PARTICIPATION_STORAGE_KEY)
+    if (!raw) return {}
+    return normalizeParticipationStats(JSON.parse(raw))
+  } catch (error) {
+    return {}
+  }
+}
+
+const writeLiveParticipationToStorage = (stats) => {
+  try {
+    localStorage.setItem(LIVE_PARTICIPATION_STORAGE_KEY, JSON.stringify(stats))
   } catch (error) {
     // Ignore storage write errors and keep local state.
   }
@@ -383,7 +516,10 @@ function App() {
   const [isAppleMobile, setIsAppleMobile] = useState(false)
   const [hostWordLength, setHostWordLength] = useState(DEFAULT_WORD_LENGTH)
   const [hostWordInput, setHostWordInput] = useState('')
+  const [isLiveInputPanelVisible, setIsLiveInputPanelVisible] = useState(false)
+  const [isHostGamesVisible, setIsHostGamesVisible] = useState(false)
   const [liveGames, setLiveGames] = useState(() => readLiveGamesFromStorage())
+  const [liveParticipationStats, setLiveParticipationStats] = useState(() => readLiveParticipationFromStorage())
   const [isLiveGamesLoading, setIsLiveGamesLoading] = useState(false)
   const [activeLiveGameId, setActiveLiveGameId] = useState('')
   const [activeLiveGameHost, setActiveLiveGameHost] = useState('')
@@ -398,6 +534,7 @@ function App() {
   const row2Consonants = consonantSource.slice(6, 12)
   const row3Consonants = consonantSource.slice(12, 16)
   const row4Consonants = consonantSource.slice(16, 18)
+  const keyboardDisabled = !isLiveModalOpen && isGameOver
 
   const chooseNickname = () => {
     const entered = window.prompt('Choose your nickname', nickname)
@@ -429,6 +566,47 @@ function App() {
     writeLiveGamesToStorage(normalized)
   }
 
+  const updateLocalLiveParticipation = (gameId, playerKey, outcome) => {
+    const normalizedGameId = String(gameId || '').trim()
+    const normalizedPlayerId = String(playerKey || '').trim()
+    const normalizedOutcome = normalizeOutcome(outcome)
+    if (!normalizedGameId || !normalizedPlayerId || !normalizedOutcome) return
+    setLiveParticipationStats((currentStats) => {
+      const nextStats = {
+        ...currentStats,
+        [normalizedGameId]: {
+          ...(currentStats[normalizedGameId] || {}),
+          [normalizedPlayerId]: normalizedOutcome,
+        },
+      }
+      writeLiveParticipationToStorage(nextStats)
+      return nextStats
+    })
+  }
+
+  const getLocalMetricsForGame = (gameId) => {
+    const byPlayer = liveParticipationStats[String(gameId || '').trim()] || {}
+    const outcomes = Object.values(byPlayer)
+    return {
+      participated: outcomes.length,
+      success: outcomes.filter((value) => value === 'success').length,
+      failure: outcomes.filter((value) => value === 'failure').length,
+    }
+  }
+
+  const getDisplayedMetrics = (game) => (
+    game.hasRemoteMetrics ? game.metrics : getLocalMetricsForGame(game.id)
+  )
+
+  const isGameHostedByCurrentUser = (game) => (
+    game.hostPlayerId === playerId || (nickname && game.hostNickname === nickname)
+  )
+
+  const hostedGames = liveGames
+    .filter(isGameHostedByCurrentUser)
+    .map((game) => ({ ...game, displayedMetrics: getDisplayedMetrics(game) }))
+  const joinableLiveGames = liveGames.filter((game) => !isGameHostedByCurrentUser(game))
+
   const loadLiveGames = async () => {
     if (!REMOTE_LIVE_GAMES_URL) {
       setLiveGames(readLiveGamesFromStorage())
@@ -455,6 +633,7 @@ function App() {
 
   const reportLiveParticipation = (outcome) => {
     if (!activeLiveGameId) return
+    updateLocalLiveParticipation(activeLiveGameId, playerId, outcome)
     reportLiveParticipationOnRemote(activeLiveGameId, playerId, outcome).catch(() => {
       // Ignore reporting failures; gameplay should continue.
     })
@@ -465,6 +644,7 @@ function App() {
     setActiveLiveGameId(game.id)
     setActiveLiveGameHost(game.hostNickname)
     setIsLiveModalOpen(false)
+    setIsLiveInputPanelVisible(false)
     setStatusMessage(`Joined game ${game.id} by ${game.hostNickname}`)
   }
 
@@ -504,11 +684,16 @@ function App() {
     }
 
     setHostWordInput('')
-    joinLiveGame(newGame)
     setStatusMessage(`Game ${newGame.id} is live.`)
   }
 
   const appendLetter = (letter) => {
+    if (isLiveModalOpen) {
+      const letters = splitGraphemes(hostWordInput)
+      if (letters.length >= hostWordLength) return
+      setHostWordInput([...letters, letter].join(''))
+      return
+    }
     if (isGameOver) return
     const letters = splitGraphemes(currentGuess)
     if (letters.length >= wordLength) return
@@ -516,6 +701,12 @@ function App() {
   }
 
   const removeLastLetter = () => {
+    if (isLiveModalOpen) {
+      const letters = splitGraphemes(hostWordInput)
+      letters.pop()
+      setHostWordInput(letters.join(''))
+      return
+    }
     if (isGameOver) return
     const letters = splitGraphemes(currentGuess)
     letters.pop()
@@ -523,18 +714,26 @@ function App() {
   }
 
   const clearGuess = () => {
+    if (isLiveModalOpen) {
+      setHostWordInput('')
+      return
+    }
     if (isGameOver) return
     setCurrentGuess('')
   }
 
   const submitGuess = (event) => {
     if (event) event.preventDefault()
+    if (isLiveModalOpen) {
+      createLiveGame()
+      return
+    }
     if (isGameOver) return
 
     const letters = splitGraphemes(currentGuess)
 
     if (letters.length !== wordLength) {
-      setStatusMessage(`${wordLength} எழுத்துகள் உள்ள சொல்லை முழுமையாக நிரப்பவும்.`)
+      setStatusMessage(`Enter a full ${wordLength}-letter word.`)
       return
     }
 
@@ -548,7 +747,7 @@ function App() {
       setIsWin(true)
       setIsGameOver(true)
       setIsResultOpen(true)
-      setStatusMessage('சிறப்பு! சரியாக கண்டுபிடித்தீர்கள்.')
+      setStatusMessage('Great! You found the correct word.')
       return
     }
 
@@ -556,12 +755,11 @@ function App() {
       reportLiveParticipation('failure')
       setIsGameOver(true)
       setIsResultOpen(true)
-      setStatusMessage(`முடிந்தது. சரியான சொல்: ${solution}`)
+      setStatusMessage(`Game over. Correct word: ${solution}`)
     } else {
       setStatusMessage('')
     }
   }
-
   const startNewGame = (nextLength = wordLength, wordsSource = selectedWordsByLength) => {
     const length = typeof nextLength === 'number' ? nextLength : wordLength
     const list = getWordsForLength(length, wordsSource)
@@ -750,18 +948,23 @@ function App() {
       const transcript = event.results?.[0]?.[0]?.transcript?.trim()
       if (!transcript) return
       const letters = splitGraphemes(transcript)
-      if (letters.length !== wordLength) {
-        setStatusMessage(`${wordLength} எழுத்துகள் உள்ள சொல்லை முழுமையாக நிரப்பவும்.`)
+      const expectedLength = isLiveModalOpen ? hostWordLength : wordLength
+      if (letters.length !== expectedLength) {
+        setStatusMessage(`Enter a full ${expectedLength}-letter word.`)
         return
       }
-      setCurrentGuess(letters.join(''))
+      if (isLiveModalOpen) {
+        setHostWordInput(letters.join(''))
+      } else {
+        setCurrentGuess(letters.join(''))
+      }
       setStatusMessage('')
       setInputMode('vowels')
       setActiveConsonant('')
       setShowGrantha(false)
     }
     recognition.onerror = () => {
-      setStatusMessage('குரல் உள்ளீடு கிடைக்கவில்லை. மீண்டும் முயற்சிக்கவும்.')
+      setStatusMessage('Voice input failed. Please try again.')
     }
     recognition.onend = () => {
       setIsListening(false)
@@ -770,10 +973,10 @@ function App() {
     return () => {
       recognition.abort()
     }
-  }, [wordLength])
+  }, [wordLength, hostWordLength, isLiveModalOpen])
 
   const toggleListening = () => {
-    if (!isSpeechSupported || isAppleMobile || isGameOver) return
+    if (!isSpeechSupported || isAppleMobile || (!isLiveModalOpen && isGameOver)) return
     if (isListening) {
       recognitionRef.current?.stop()
       return
@@ -811,9 +1014,17 @@ function App() {
             <button
               type="button"
               className="live-button"
-              onClick={() => setIsLiveModalOpen(true)}
+              onClick={() => {
+                setIsLiveModalOpen((value) => {
+                  const next = !value
+                  if (next) {
+                    setIsLiveInputPanelVisible(false)
+                  }
+                  return next
+                })
+              }}
             >
-              Live
+              {isLiveModalOpen ? 'Game' : 'Live'}
             </button>
             <button
               type="button"
@@ -838,377 +1049,8 @@ function App() {
           <p className="category-summary">Category: {selectedCategoryName}</p>
         </section>
 
-        <section
-          className={`board ${wordLength === 4 ? 'length-4' : 'length-5'}`}
-          role="grid"
-          aria-label="Tamil Wordle board"
-        >
-          {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
-            const guess = guesses[rowIndex] || (rowIndex === guesses.length ? currentGuess : '')
-            const letters = splitGraphemes(guess)
-            const evaluation = rowIndex < guesses.length ? evaluateGuess(guesses[rowIndex], solution) : null
-
-            return (
-              <div className="row" role="row" key={`row-${rowIndex}`}>
-                {Array.from({ length: wordLength }).map((__, colIndex) => {
-                  const letter = letters[colIndex] || ''
-                  const status = evaluation ? evaluation[colIndex]?.status : letter ? 'filled' : 'empty'
-                  const vowelStatus = evaluation ? evaluation[colIndex]?.vowelStatus || '' : ''
-
-                  return (
-                    <div
-                      key={`tile-${rowIndex}-${colIndex}`}
-                      role="gridcell"
-                      className={`tile ${status} ${vowelStatus}`}
-                    >
-                      {letter}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </section>
-
-        <section className="input-panel" aria-label="Tamil letter input">
-          <div className="panel">
-            <div className="panel-content">
-              <div className="keyboard-layout">
-                <div className="keyboard-main">
-                  {inputMode === 'vowels' ? (
-                    <div className="vowel-layout">
-                      <div className="vowel-row">
-                        {VOWELS.slice(0, 5).map((vowel) => (
-                          <button
-                            key={vowel.letter}
-                            type="button"
-                            className="key"
-                            onClick={() => appendLetter(vowel.letter)}
-                            disabled={isGameOver}
-                          >
-                            {vowel.letter}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="vowel-row">
-                        {VOWELS.slice(5, 10).map((vowel) => (
-                          <button
-                            key={vowel.letter}
-                            type="button"
-                            className="key"
-                            onClick={() => appendLetter(vowel.letter)}
-                            disabled={isGameOver}
-                          >
-                            {vowel.letter}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="vowel-row vowel-row-third">
-                        <span className="vowel-spacer" aria-hidden="true" />
-                        {VOWELS.slice(10, 12).map((vowel) => (
-                          <button
-                            key={vowel.letter}
-                            type="button"
-                            className="key"
-                            onClick={() => appendLetter(vowel.letter)}
-                            disabled={isGameOver}
-                          >
-                            {vowel.letter}
-                          </button>
-                        ))}
-                        <span className="vowel-spacer" aria-hidden="true" />
-                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
-                          <img src="/delete.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                      <div className="vowel-row vowel-row-fourth">
-                        <button
-                          type="button"
-                          className="toggle-button mode-switch-vowel-icon mode-switch-consonants"
-                          onClick={() => {
-                            setInputMode('consonants')
-                            setActiveConsonant('')
-                            setShowGrantha(false)
-                          }}
-                          disabled={isGameOver}
-                          aria-label="Show consonants"
-                        >
-                          {'\u0B95 \u0B99 \u0B9A'}
-                        </button>
-                        <span className="vowel-center-slot">
-                          <button
-                            type="button"
-                            className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
-                            onClick={toggleListening}
-                            disabled={isGameOver || !isSpeechSupported || isAppleMobile}
-                            aria-pressed={isListening}
-                          >
-                            <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                              <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                              <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                              <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                            </svg>
-                          </button>
-                        </span>
-                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
-                          <img src="/enter.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : showSyllables ? (
-                    <div className="syllable-layout">
-                      <div className="syllable-row syllable-row-5">
-                        {Array.from({ length: 5 }).map((_, index) => {
-                          const syllable = syllableRow1[index]
-                          if (!syllable) return <span key={`syll-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`syll-r1-${syllable}`}
-                              type="button"
-                              className="key"
-                              onClick={() => appendLetter(syllable)}
-                              disabled={isGameOver}
-                            >
-                              {syllable}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      <div className="syllable-row syllable-row-5">
-                        {Array.from({ length: 5 }).map((_, index) => {
-                          const syllable = syllableRow2[index]
-                          if (!syllable) return <span key={`syll-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`syll-r2-${syllable}`}
-                              type="button"
-                              className="key"
-                              onClick={() => appendLetter(syllable)}
-                              disabled={isGameOver}
-                            >
-                              {syllable}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      <div className="syllable-row syllable-row-5">
-                        <button
-                          type="button"
-                          className="key key-icon-action grantha-toggle"
-                          onClick={() => {
-                            setActiveConsonant('')
-                            setInputMode('consonants')
-                          }}
-                          disabled={isGameOver}
-                          aria-label="Back to consonants"
-                          title="Back"
-                        >
-                          <img src="/back.png" alt="" aria-hidden="true" />
-                        </button>
-                        {Array.from({ length: 3 }).map((_, index) => {
-                          const syllable = syllableRow3[index]
-                          if (!syllable) return <span key={`syll-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`syll-r3-${syllable}`}
-                              type="button"
-                              className="key"
-                              onClick={() => appendLetter(syllable)}
-                              disabled={isGameOver}
-                            >
-                              {syllable}
-                            </button>
-                          )
-                        })}
-                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
-                          <img src="/delete.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                      <div className="syllable-row syllable-row-bottom">
-                        <button
-                          type="button"
-                          className="toggle-button mode-switch-vowel-icon"
-                          onClick={() => {
-                            setActiveConsonant('')
-                            setInputMode('vowels')
-                            setShowGrantha(false)
-                          }}
-                          disabled={isGameOver}
-                          aria-label="Show vowels"
-                          title="Vowels"
-                        >
-                          {'\u0B85 \u0B86 \u0B87'}
-                        </button>
-                        <button
-                          type="button"
-                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
-                          onClick={toggleListening}
-                          disabled={isGameOver || !isSpeechSupported || isAppleMobile}
-                          aria-pressed={isListening}
-                        >
-                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                          </svg>
-                        </button>
-                        <button type="button" className="key key-icon-action syllable-enter" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
-                          <img src="/enter.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="consonant-layout">
-                      <div className="consonant-row consonant-row-6">
-                        {Array.from({ length: 6 }).map((_, index) => {
-                          const consonant = row1Consonants[index]
-                          if (!consonant) return <span key={`cons-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`cons-r1-${consonant}`}
-                              type="button"
-                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                              onClick={() => setActiveConsonant(consonant)}
-                              disabled={isGameOver}
-                            >
-                              {consonant}
-                            </button>
-                          )
-                        })}
-                      </div>
-
-                      <div className="consonant-row consonant-row-6">
-                        {Array.from({ length: 6 }).map((_, index) => {
-                          const consonant = row2Consonants[index]
-                          if (!consonant) return <span key={`cons-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`cons-r2-${consonant}`}
-                              type="button"
-                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                              onClick={() => setActiveConsonant(consonant)}
-                              disabled={isGameOver}
-                            >
-                              {consonant}
-                            </button>
-                          )
-                        })}
-                      </div>
-
-                      <div className="consonant-row consonant-row-6">
-                        <button
-                          type="button"
-                          className="key key-icon-action grantha-toggle"
-                          onClick={() => setShowGrantha((value) => !value)}
-                          disabled={isGameOver}
-                          aria-label={showGrantha ? 'Show Tamil consonants' : 'Show Grantha consonants'}
-                          title={showGrantha ? 'Tamil' : 'Grantha'}
-                        >
-                          <img
-                            src={showGrantha ? '/consonant.png' : '/sanskrit.png'}
-                            alt=""
-                            aria-hidden="true"
-                          />
-                        </button>
-                        {Array.from({ length: 4 }).map((_, index) => {
-                          const consonant = row3Consonants[index]
-                          if (!consonant) return <span key={`cons-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`cons-r3-${consonant}`}
-                              type="button"
-                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                              onClick={() => setActiveConsonant(consonant)}
-                              disabled={isGameOver}
-                            >
-                              {consonant}
-                            </button>
-                          )
-                        })}
-                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={isGameOver} aria-label="Delete">
-                          <img src="/delete.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-
-                      <div className="consonant-row consonant-row-5">
-                        <button
-                          type="button"
-                          className="toggle-button mode-switch-vowel-icon"
-                          onClick={() => {
-                            setInputMode('vowels')
-                            setActiveConsonant('')
-                            setShowGrantha(false)
-                          }}
-                          disabled={isGameOver}
-                          aria-label="Show vowels"
-                          title="Vowels"
-                        >
-                          {'\u0B85 \u0B86 \u0B87'}
-                        </button>
-                        {Array.from({ length: 2 }).map((_, index) => {
-                          const consonant = row4Consonants[index]
-                          if (!consonant) return <span key={`cons-r4-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
-                          return (
-                            <button
-                              key={`cons-r4-${consonant}`}
-                              type="button"
-                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
-                              onClick={() => setActiveConsonant(consonant)}
-                              disabled={isGameOver}
-                            >
-                              {consonant}
-                            </button>
-                          )
-                        })}
-                        <button
-                          type="button"
-                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
-                          onClick={toggleListening}
-                          disabled={isGameOver || !isSpeechSupported || isAppleMobile}
-                          aria-pressed={isListening}
-                        >
-                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
-                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
-                          </svg>
-                        </button>
-                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={isGameOver} aria-label="Enter">
-                          <img src="/enter.png" alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-        </section>
-      </div>
-
-      <div className={`status ${isWin ? 'win' : ''}`} aria-live="polite">
-        {statusMessage}
-      </div>
-
-      {isLiveModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsLiveModalOpen(false)}>
-          <div
-            className="modal live-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Live games"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2>Live</h2>
-              <button type="button" className="modal-close" onClick={() => setIsLiveModalOpen(false)}>
-                ×
-              </button>
-            </div>
-
+        {isLiveModalOpen ? (
+          <section className="board live-board" aria-label="Live game controls">
             <div className="live-modal-body">
               <section className="live-modal-section" aria-label="Create a live game">
                 <h3>Create a live game</h3>
@@ -1217,29 +1059,72 @@ function App() {
                     <button
                       type="button"
                       className={`length-button ${hostWordLength === 4 ? 'active' : ''}`}
-                      onClick={() => setHostWordLength(4)}
+                      onClick={() => {
+                        setHostWordLength(4)
+                        setHostWordInput('')
+                        setIsLiveInputPanelVisible(true)
+                      }}
                     >
                       4 Letters
                     </button>
                     <button
                       type="button"
                       className={`length-button ${hostWordLength === 5 ? 'active' : ''}`}
-                      onClick={() => setHostWordLength(5)}
+                      onClick={() => {
+                        setHostWordLength(5)
+                        setHostWordInput('')
+                        setIsLiveInputPanelVisible(true)
+                      }}
                     >
                       5 Letters
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    className="host-word-input"
-                    value={hostWordInput}
-                    onChange={(event) => setHostWordInput(event.target.value)}
-                    placeholder={`Enter ${hostWordLength} letter word`}
-                    aria-label="Host word"
-                  />
+                  <button
+                    type="button"
+                    className={`row live-host-row ${hostWordLength === 4 ? 'length-4' : 'length-5'}`}
+                    onClick={() => setIsLiveInputPanelVisible(true)}
+                  >
+                    {Array.from({ length: hostWordLength }).map((_, index) => {
+                      const letter = splitGraphemes(hostWordInput)[index] || ''
+                      return (
+                        <div key={`host-tile-${index}`} className={`tile ${letter ? 'filled' : 'empty'}`}>
+                          {letter}
+                        </div>
+                      )
+                    })}
+                  </button>
+                  <p className="multiplayer-mode-note">Tap 4/5 or the word tiles to open Tamil input, then press Enter.</p>
                   <button type="button" className="host-start-button" onClick={createLiveGame}>
                     Start Live Game
                   </button>
+                  <button
+                    type="button"
+                    className="host-games-toggle-button"
+                    onClick={() => setIsHostGamesVisible((value) => !value)}
+                  >
+                    {isHostGamesVisible ? 'Hide My Live Games' : 'View My Live Games'}
+                  </button>
+                  {isHostGamesVisible && (
+                    <div className="host-games-list" role="list" aria-label="Hosted live games">
+                      {hostedGames.length === 0 ? (
+                        <p className="live-games-empty">No live games created by you yet.</p>
+                      ) : (
+                        hostedGames.map((game) => (
+                          <div className="host-game-item" key={`hosted-${game.id}`} role="listitem">
+                            <div className="live-game-meta">
+                              <span className="game-id">{game.id}</span>
+                              <span>{game.wordLength} letters</span>
+                            </div>
+                            <div className="host-game-metrics">
+                              <span>Participated: {game.displayedMetrics.participated}</span>
+                              <span>Successful: {game.displayedMetrics.success}</span>
+                              <span>Unsuccessful: {game.displayedMetrics.failure}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -1269,10 +1154,10 @@ function App() {
                 )}
 
                 <div className="live-games-list" role="list" aria-label="Live games">
-                  {liveGames.length === 0 ? (
-                    <p className="live-games-empty">No live games yet.</p>
+                  {joinableLiveGames.length === 0 ? (
+                    <p className="live-games-empty">No live games from other hosts yet.</p>
                   ) : (
-                    liveGames.map((game) => (
+                    joinableLiveGames.map((game) => (
                       <div className="live-game-item" role="listitem" key={game.id}>
                         <div className="live-game-meta">
                           <span className="game-id">{game.id}</span>
@@ -1293,9 +1178,365 @@ function App() {
                 </div>
               </section>
             </div>
+          </section>
+        ) : (
+          <section
+            className={`board ${wordLength === 4 ? 'length-4' : 'length-5'}`}
+            role="grid"
+            aria-label="Tamil Wordle board"
+          >
+            {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
+              const guess = guesses[rowIndex] || (rowIndex === guesses.length ? currentGuess : '')
+              const letters = splitGraphemes(guess)
+              const evaluation = rowIndex < guesses.length ? evaluateGuess(guesses[rowIndex], solution) : null
+
+              return (
+                <div className="row" role="row" key={`row-${rowIndex}`}>
+                  {Array.from({ length: wordLength }).map((__, colIndex) => {
+                    const letter = letters[colIndex] || ''
+                    const status = evaluation ? evaluation[colIndex]?.status : letter ? 'filled' : 'empty'
+                    const vowelStatus = evaluation ? evaluation[colIndex]?.vowelStatus || '' : ''
+
+                    return (
+                      <div
+                        key={`tile-${rowIndex}-${colIndex}`}
+                        role="gridcell"
+                        className={`tile ${status} ${vowelStatus}`}
+                      >
+                        {letter}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </section>
+        )}
+
+        {(!isLiveModalOpen || isLiveInputPanelVisible) && (
+          <section className="input-panel" aria-label="Tamil letter input">
+          <div className="panel">
+            <div className="panel-content">
+              <div className="keyboard-layout">
+                <div className="keyboard-main">
+                  {inputMode === 'vowels' ? (
+                    <div className="vowel-layout">
+                      <div className="vowel-row">
+                        {VOWELS.slice(0, 5).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={keyboardDisabled}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="vowel-row">
+                        {VOWELS.slice(5, 10).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={keyboardDisabled}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="vowel-row vowel-row-third">
+                        <span className="vowel-spacer" aria-hidden="true" />
+                        {VOWELS.slice(10, 12).map((vowel) => (
+                          <button
+                            key={vowel.letter}
+                            type="button"
+                            className="key"
+                            onClick={() => appendLetter(vowel.letter)}
+                            disabled={keyboardDisabled}
+                          >
+                            {vowel.letter}
+                          </button>
+                        ))}
+                        <span className="vowel-spacer" aria-hidden="true" />
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={keyboardDisabled} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="vowel-row vowel-row-fourth">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon mode-switch-consonants"
+                          onClick={() => {
+                            setInputMode('consonants')
+                            setActiveConsonant('')
+                            setShowGrantha(false)
+                          }}
+                          disabled={keyboardDisabled}
+                          aria-label="Show consonants"
+                        >
+                          {'\u0B95 \u0B99 \u0B9A'}
+                        </button>
+                        <span className="vowel-center-slot">
+                          <button
+                            type="button"
+                            className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                            onClick={toggleListening}
+                            disabled={keyboardDisabled || !isSpeechSupported || isAppleMobile}
+                            aria-pressed={isListening}
+                          >
+                            <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                              <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                              <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </span>
+                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={keyboardDisabled} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : showSyllables ? (
+                    <div className="syllable-layout">
+                      <div className="syllable-row syllable-row-5">
+                        {Array.from({ length: 5 }).map((_, index) => {
+                          const syllable = syllableRow1[index]
+                          if (!syllable) return <span key={`syll-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r1-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={keyboardDisabled}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="syllable-row syllable-row-5">
+                        {Array.from({ length: 5 }).map((_, index) => {
+                          const syllable = syllableRow2[index]
+                          if (!syllable) return <span key={`syll-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r2-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={keyboardDisabled}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="syllable-row syllable-row-5">
+                        <button
+                          type="button"
+                          className="key key-icon-action grantha-toggle"
+                          onClick={() => {
+                            setActiveConsonant('')
+                            setInputMode('consonants')
+                          }}
+                          disabled={keyboardDisabled}
+                          aria-label="Back to consonants"
+                          title="Back"
+                        >
+                          <img src="/back.png" alt="" aria-hidden="true" />
+                        </button>
+                        {Array.from({ length: 3 }).map((_, index) => {
+                          const syllable = syllableRow3[index]
+                          if (!syllable) return <span key={`syll-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`syll-r3-${syllable}`}
+                              type="button"
+                              className="key"
+                              onClick={() => appendLetter(syllable)}
+                              disabled={keyboardDisabled}
+                            >
+                              {syllable}
+                            </button>
+                          )
+                        })}
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={keyboardDisabled} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="syllable-row syllable-row-bottom">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon"
+                          onClick={() => {
+                            setActiveConsonant('')
+                            setInputMode('vowels')
+                            setShowGrantha(false)
+                          }}
+                          disabled={keyboardDisabled}
+                          aria-label="Show vowels"
+                          title="Vowels"
+                        >
+                          {'\u0B85 \u0B86 \u0B87'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                          onClick={toggleListening}
+                          disabled={keyboardDisabled || !isSpeechSupported || isAppleMobile}
+                          aria-pressed={isListening}
+                        >
+                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                        <button type="button" className="key key-icon-action syllable-enter" onClick={submitGuess} disabled={keyboardDisabled} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="consonant-layout">
+                      <div className="consonant-row consonant-row-6">
+                        {Array.from({ length: 6 }).map((_, index) => {
+                          const consonant = row1Consonants[index]
+                          if (!consonant) return <span key={`cons-r1-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r1-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={keyboardDisabled}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="consonant-row consonant-row-6">
+                        {Array.from({ length: 6 }).map((_, index) => {
+                          const consonant = row2Consonants[index]
+                          if (!consonant) return <span key={`cons-r2-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r2-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={keyboardDisabled}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="consonant-row consonant-row-6">
+                        <button
+                          type="button"
+                          className="key key-icon-action grantha-toggle"
+                          onClick={() => setShowGrantha((value) => !value)}
+                          disabled={keyboardDisabled}
+                          aria-label={showGrantha ? 'Show Tamil consonants' : 'Show Grantha consonants'}
+                          title={showGrantha ? 'Tamil' : 'Grantha'}
+                        >
+                          <img
+                            src={showGrantha ? '/consonant.png' : '/sanskrit.png'}
+                            alt=""
+                            aria-hidden="true"
+                          />
+                        </button>
+                        {Array.from({ length: 4 }).map((_, index) => {
+                          const consonant = row3Consonants[index]
+                          if (!consonant) return <span key={`cons-r3-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r3-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={keyboardDisabled}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
+                        <button type="button" className="key key-icon-action delete-action" onClick={removeLastLetter} disabled={keyboardDisabled} aria-label="Delete">
+                          <img src="/delete.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <div className="consonant-row consonant-row-5">
+                        <button
+                          type="button"
+                          className="toggle-button mode-switch-vowel-icon"
+                          onClick={() => {
+                            setInputMode('vowels')
+                            setActiveConsonant('')
+                            setShowGrantha(false)
+                          }}
+                          disabled={keyboardDisabled}
+                          aria-label="Show vowels"
+                          title="Vowels"
+                        >
+                          {'\u0B85 \u0B86 \u0B87'}
+                        </button>
+                        {Array.from({ length: 2 }).map((_, index) => {
+                          const consonant = row4Consonants[index]
+                          if (!consonant) return <span key={`cons-r4-empty-${index}`} className="key key-placeholder" aria-hidden="true" />
+                          return (
+                            <button
+                              key={`cons-r4-${consonant}`}
+                              type="button"
+                              className={`key ${activeConsonant === consonant ? 'active' : ''} ${wrongConsonants.has(consonant) ? 'absent' : ''}`}
+                              onClick={() => setActiveConsonant(consonant)}
+                              disabled={keyboardDisabled}
+                            >
+                              {consonant}
+                            </button>
+                          )
+                        })}
+                        <button
+                          type="button"
+                          className={`toggle-button toggle-mic ${isListening ? 'active' : ''} ${(!isSpeechSupported || isAppleMobile) ? 'disabled' : ''}`}
+                          onClick={toggleListening}
+                          disabled={keyboardDisabled || !isSpeechSupported || isAppleMobile}
+                          aria-pressed={isListening}
+                        >
+                          <svg className="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="9" y="2.5" width="6" height="11" rx="3" />
+                            <path d="M6.2 10.5a5.8 5.8 0 0 0 11.6 0" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                            <path d="M12 16.5v4.5" fill="none" strokeWidth="2.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                        <button type="button" className="key key-enter-inline key-icon-action" onClick={submitGuess} disabled={keyboardDisabled} aria-label="Enter">
+                          <img src="/enter.png" alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+
+          </section>
+        )}
+      </div>
+
+      <div className={`status ${isWin ? 'win' : ''}`} aria-live="polite">
+        {statusMessage}
+      </div>
 
       {isResultOpen && (
         <div className="modal-backdrop" role="presentation" onClick={acknowledgeResult}>
@@ -1468,3 +1709,8 @@ function App() {
 }
 
 export default App
+
+
+
+
+
